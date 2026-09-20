@@ -4,13 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1">
 <title>PROPIZZEC · Sistema de Producción</title>
-<link rel="manifest" href="manifest.json">
-<link rel="icon" href="icons/icon-192.png" type="image/png">
-<link rel="apple-touch-icon" href="icons/icon-192.png">
-<meta name="theme-color" content="#0F172A">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="PROPIZZEC">
+<link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUFJPUElaWkVDIn0=">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -4639,11 +4633,6 @@ function renderEtiqActividadTab(){
   const body = document.getElementById('etiqRoot');
   if(!body) return;
   const esHoy = EtiqState.fecha === todayISO();
-  const ordenes = (cacheEtiqCronograma||[]).filter(r=>!r.finalizado);
-  const options = ordenes.map(r=>{
-    const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
-    return `<option value="${r.id}" ${EtiqState.selId===r.id?'selected':''}>${escHtml(r.orden_produccion||'—')} · ${escHtml(r.item_codigo)} — ${escHtml(item?item.nombre:r.item_codigo)}</option>`;
-  }).join('');
   body.innerHTML = `
     <div class="card" style="--accent:var(--traza)">
       <h2>🏷️ Etiquetado</h2>
@@ -4654,50 +4643,152 @@ function renderEtiqActividadTab(){
       </div>
     </div>
     ${esHoy ? '' : '<div class="sub" style="margin-top:-8px;margin-bottom:10px;color:var(--paradas);font-weight:600;">Estás viendo una fecha distinta a hoy.</div>'}
-    <div class="card" style="--accent:var(--traza)">
-      <div class="field">
-        <label>Orden / producto (Planificación del ${ddMMyy(EtiqState.fecha)})</label>
-        <select id="etiqOrdenSel" onchange="etiqSeleccionarOrden(this.value)">
-          <option value="">Selecciona una orden…</option>${options}
-        </select>
-        ${!ordenes.length ? '<div class="sub" style="margin-top:4px;">No hay órdenes pendientes en Cronograma para esta fecha.</div>' : ''}
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="etiqListSearch" placeholder="Buscar producto por código o nombre…" value="${escHtml(EtiqState.qLista||'')}">
       </div>
     </div>
-    <div id="etiqDetalle"></div>
+    <div class="list-meta">Productos a etiquetar (Planificación del ${ddMMyy(EtiqState.fecha)})</div>
+    <div class="reg-list" id="etiqOrdenList"></div>
   `;
-  if(EtiqState.selId) etiqRenderDetalle();
+  const input = document.getElementById('etiqListSearch');
+  input.addEventListener('input', e=>{ EtiqState.qLista = e.target.value; etiqRenderOrdenList(); });
+  etiqRenderOrdenList();
 }
-function etiqSeleccionarOrden(id){
-  EtiqState.selId = id || null;
-  etiqRenderDetalle();
+function etiqRenderOrdenList(){
+  const list = document.getElementById('etiqOrdenList');
+  if(!list) return;
+  const q = (EtiqState.qLista||'').trim().toUpperCase();
+  let ordenes = (cacheEtiqCronograma||[]).filter(r=>!r.finalizado);
+  if(q){
+    ordenes = ordenes.filter(r=>{
+      const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+      return (r.item_codigo||'').toUpperCase().includes(q) || (r.orden_produccion||'').toUpperCase().includes(q) || (item && item.nombre.toUpperCase().includes(q));
+    });
+  }
+  if(!ordenes.length){ list.innerHTML = '<div class="empty-state">Sin órdenes pendientes en Cronograma para esta fecha.</div>'; return; }
+  list.innerHTML = ordenes.map(r=>{
+    const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+    return `<div class="reg-row" onclick="etiqAbrirModal('${r.id}')">
+      <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion||'')} · Lote ${escHtml(r.lote||ddMMyy(r.fecha))}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)}</span></div>
+      <div class="rval"><span class="sup">CANTIDAD</span><span class="big">${fmtNum(r.cantidad_real!=null?r.cantidad_real:r.cantidad_programada)}</span></div>
+    </div>`;
+  }).join('');
 }
-async function etiqRenderDetalle(){
-  const wrap = document.getElementById('etiqDetalle');
-  if(!wrap) return;
-  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqState.selId);
-  if(!row){ wrap.innerHTML=''; return; }
+let EtiqModalState = { cronogramaId:null, rows:[] };
+async function etiqAbrirModal(cronogramaId){
+  const row = (cacheEtiqCronograma||[]).find(r=>r.id===cronogramaId);
+  if(!row) return;
+  const componentesME = (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===row.item_codigo).map(f=>{
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return (compItem && compItem.tipo==='MATERIAL_EMPAQUE') ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
+  }).filter(Boolean);
+  if(!componentesME.length){ toast('Este producto no tiene material de empaque definido en su fórmula (Formulación → Ítems)'); return; }
+  toast('Cargando lotes disponibles…');
+  const lotesPorItem = {};
+  await Promise.all(componentesME.map(async c=>{
+    const { data } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
+    lotesPorItem[c.item_codigo] = data||[];
+  }));
+  EtiqModalState = {
+    cronogramaId,
+    rows: componentesME.map(c=>{
+      const teorica = pfCantidadTeorica(row, c.item_codigo);
+      return { ...c, teorica, cantidad: teorica, lote:'', lotes: lotesPorItem[c.item_codigo]||[] };
+    })
+  };
+  etiqRenderModal();
+}
+function etiqRenderModal(){
+  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId);
+  if(!row) return;
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
-  wrap.innerHTML = '<div class="empty-state">Cargando…</div>';
-  const { data: registros } = await sb.from('etiquetado_registros').select('*').eq('cronograma_id', row.id).order('created_at');
-  wrap.innerHTML = `
-    <div class="card" style="--accent:var(--traza)">
-      <div class="msub" style="font-weight:700;color:var(--ink);">${escHtml(row.orden_produccion||'')} · ${escHtml(row.item_codigo)} — ${escHtml(item?item.nombre:row.item_codigo)}</div>
-      <div class="field"><label>Lote del producto</label>
-        <input type="text" id="etiqLoteProducto" value="${escHtml(row.lote||ddMMyy(row.fecha))}" onchange="etiqActualizarLote('${row.id}', this.value)">
-      </div>
-      <div class="sub" style="margin-top:-8px;margin-bottom:14px;">Si cambias este lote, se actualiza de inmediato en Planificación/Cronograma.</div>
-
-      <div class="sel-section-title">Agregar material de empaque</div>
-      <div class="field">
-        <input type="text" id="etiqMeSearch" placeholder="Buscar material de empaque…" oninput="etiqBuscarME(this.value)">
-        <div class="search-results" id="etiqMeResults"></div>
-      </div>
-      <div id="etiqMeForm"></div>
-
-      <div class="sel-section-title">Empaques registrados para esta orden</div>
-      <div id="etiqMeList">${etiqRenderMeListHtml(registros||[])}</div>
+  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
+  openModal(`
+    <h3>${escHtml(item?item.nombre:row.item_codigo)}</h3>
+    <div class="msub">${escHtml(row.orden_produccion||'')} · ${escHtml(row.item_codigo)}</div>
+    <div class="field"><label>Lote del producto</label>
+      <input type="text" id="etiqModalLote" value="${escHtml(EtiqModalState.loteProducto!=null?EtiqModalState.loteProducto:(row.lote||ddMMyy(row.fecha)))}">
     </div>
-  `;
+    <div class="sub" style="margin-top:-8px;margin-bottom:14px;">Si lo cambias, se actualiza de inmediato en Planificación/Cronograma.</div>
+
+    <div class="sel-section-title">Material de empaque</div>
+    ${EtiqModalState.rows.map((r,idx)=>`
+      <div class="ci-row" style="margin-bottom:4px;">
+        <div class="ci-name"><span class="sup">${escHtml(r.item_codigo)}</span><span class="nm">${escHtml(r.item_nombre)}</span></div>
+      </div>
+      <div class="field-row">
+        <div class="field"><label>Cantidad teórica (${escHtml(r.medida)})</label><input type="text" value="${r.teorica!=null?fmtRaw(r.teorica):'—'}" disabled></div>
+        <div class="field"><label>Cantidad usada</label><input type="text" inputmode="decimal" id="etiqCant_${idx}" value="${r.cantidad!=null?fmtRaw(r.cantidad):''}" onchange="etiqSetCantidad(${idx}, this.value)"></div>
+      </div>
+      <div class="field"><label>Lote</label>
+        <select id="etiqLote_${idx}" onchange="etiqSetLote(${idx}, this.value)">
+          <option value="">Selecciona…</option>
+          ${r.lotes.map(l=>`<option value="${escHtml(l.lote)}" ${r.lote===l.lote?'selected':''}>${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)}</option>`).join('')}
+        </select>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0;">
+    `).join('')}
+
+    <div class="field"><label>Observaciones</label>
+      <textarea id="etiqModalObs" rows="2" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">${escHtml(EtiqModalState.observaciones||'')}</textarea>
+    </div>
+    <div class="field"><label>Responsable</label>
+      <select id="etiqModalResp">
+        <option value="">Selecciona…</option>
+        ${responsables.map(c=>`<option value="${escHtml(c.nombre)}" ${EtiqModalState.responsable===c.nombre?'selected':''}>${escHtml(c.nombre)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarModal()">Guardar</button>
+    </div>
+  `);
+}
+function etiqSetCantidad(idx, val){
+  const v = parseFloat((val||'').replace(',','.'));
+  EtiqModalState.rows[idx].cantidad = isNaN(v) ? null : v;
+}
+function etiqSetLote(idx, val){
+  EtiqModalState.rows[idx].lote = val;
+}
+async function etiqGuardarModal(){
+  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId);
+  if(!row) return;
+  const lote = document.getElementById('etiqModalLote').value.trim();
+  if(!lote){ toast('El lote del producto no puede quedar vacío'); return; }
+  const observaciones = document.getElementById('etiqModalObs').value;
+  const responsable = document.getElementById('etiqModalResp').value;
+  const rowsAUsar = EtiqModalState.rows.filter(r=>r.cantidad!=null && r.cantidad>0);
+  if(!rowsAUsar.length){ toast('Ingresa la cantidad usada de al menos un material de empaque'); return; }
+  const sinLote = rowsAUsar.filter(r=>!r.lote);
+  if(sinLote.length){ toast('Falta elegir el lote de: ' + sinLote.map(r=>r.item_codigo).join(', ')); return; }
+
+  if(lote !== row.lote){
+    const { error: errLote } = await sb.from('cronograma').update({ lote }).eq('id', row.id);
+    if(errLote){ toast('Error al actualizar el lote: ' + errLote.message); return; }
+    row.lote = lote;
+  }
+  const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
+  for(const r of rowsAUsar){
+    const payload = {
+      cronograma_id: row.id, fecha: row.fecha, orden_produccion: row.orden_produccion,
+      item_codigo: row.item_codigo, item_nombre: item?item.nombre:row.item_codigo, lote_producto: lote,
+      item_me_codigo: r.item_codigo, item_me_nombre: r.item_nombre, cantidad: r.cantidad, lote_me: r.lote,
+      observaciones, responsable
+    };
+    const { data, error } = await sb.from('etiquetado_registros').insert(payload).select().single();
+    if(error){ toast('Error al guardar ' + r.item_codigo + ': ' + error.message); continue; }
+    const comprobante = 'ETIQUETADO-' + data.id;
+    const { error: errK } = await sb.from('kardex_movimientos').insert({
+      item_codigo: r.item_codigo, fecha: row.fecha, lote: r.lote, comprobante, entra:0, sale: r.cantidad
+    });
+    if(errK){ toast('Se guardó ' + r.item_codigo + ', pero hubo un error al descontar del Kardex: ' + errK.message); }
+  }
+  await invLoad(true);
+  toast('Etiquetado registrado y descontado del Kardex');
+  closeModal();
+  etiqRenderOrdenList();
 }
 async function etiqActualizarLote(cronogramaId, lote){
   lote = (lote||'').trim();
@@ -4707,72 +4798,6 @@ async function etiqActualizarLote(cronogramaId, lote){
   const row = (cacheEtiqCronograma||[]).find(r=>r.id===cronogramaId);
   if(row) row.lote = lote;
   toast('Lote actualizado — sincronizado con Planificación');
-}
-function etiqBuscarME(q){
-  q = (q||'').trim().toUpperCase();
-  const results = document.getElementById('etiqMeResults');
-  if(!results) return;
-  if(!q){ results.innerHTML=''; return; }
-  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
-  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="etiqElegirME('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
-}
-async function etiqElegirME(codigo){
-  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqState.selId);
-  if(!row) return;
-  const item = (cacheItems||[]).find(i=>i.codigo===codigo);
-  const teorico = pfCantidadTeorica(row, codigo);
-  const { data: lotes } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
-  const s = document.getElementById('etiqMeSearch'); if(s) s.value='';
-  const r = document.getElementById('etiqMeResults'); if(r) r.innerHTML='';
-  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
-  document.getElementById('etiqMeForm').innerHTML = `
-    <div class="readonly-box" style="margin-bottom:10px;"><b>${escHtml(codigo)}</b> — ${escHtml(item?item.nombre:codigo)}</div>
-    <div class="field-row">
-      <div class="field"><label>Cantidad utilizada (${escHtml(item?item.medida:'')})</label><input type="text" inputmode="decimal" id="etiqMeCantidad" value="${teorico!=null?fmtRaw(teorico):''}"></div>
-      <div class="field"><label>Lote del ME</label>
-        <select id="etiqMeLote">
-          <option value="">Selecciona…</option>
-          ${(lotes||[]).map(l=>`<option value="${escHtml(l.lote)}">${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)}</option>`).join('')}
-        </select>
-      </div>
-    </div>
-    ${teorico!=null ? '<div class="sub" style="margin-top:-8px;margin-bottom:10px;">Cantidad teórica según fórmula — puedes editarla.</div>' : ''}
-    <div class="field"><label>Observaciones</label><input type="text" id="etiqMeObs" placeholder="Opcional…"></div>
-    <div class="field"><label>Responsable</label>
-      <select id="etiqMeResp">
-        <option value="">Selecciona…</option>
-        ${responsables.map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
-      </select>
-    </div>
-    <button class="btn primary" type="button" style="width:100%;--accent:var(--traza)" onclick="etiqGuardarME('${escHtml(codigo)}','${escHtml(item?item.nombre:codigo)}')">Guardar</button>
-  `;
-}
-async function etiqGuardarME(codigo, nombre){
-  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqState.selId);
-  if(!row) return;
-  const cantidad = parseFloat((document.getElementById('etiqMeCantidad').value||'0').replace(',','.'));
-  const lote = document.getElementById('etiqMeLote').value;
-  if(!cantidad || cantidad<=0){ toast('Ingresa la cantidad utilizada'); return; }
-  if(!lote){ toast('Selecciona el lote del material de empaque'); return; }
-  const observaciones = document.getElementById('etiqMeObs').value;
-  const responsable = document.getElementById('etiqMeResp').value;
-  const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
-  const payload = {
-    cronograma_id: row.id, fecha: row.fecha, orden_produccion: row.orden_produccion,
-    item_codigo: row.item_codigo, item_nombre: item?item.nombre:row.item_codigo, lote_producto: row.lote||ddMMyy(row.fecha),
-    item_me_codigo: codigo, item_me_nombre: nombre, cantidad, lote_me: lote,
-    observaciones, responsable
-  };
-  const { data, error } = await sb.from('etiquetado_registros').insert(payload).select().single();
-  if(error){ toast('Error: '+error.message); return; }
-  const comprobante = 'ETIQUETADO-' + data.id;
-  const { error: errK } = await sb.from('kardex_movimientos').insert({
-    item_codigo: codigo, fecha: row.fecha, lote, comprobante, entra:0, sale: cantidad
-  });
-  if(errK){ toast('Se guardó el registro, pero hubo un error al descontar del Kardex: ' + errK.message); }
-  await invLoad(true);
-  toast('Material de empaque registrado y descontado del Kardex');
-  etiqRenderDetalle();
 }
 function etiqRenderMeListHtml(registros){
   if(!registros.length) return '<div class="empty-state">Sin material de empaque registrado todavía.</div>';
@@ -9416,13 +9441,6 @@ async function subscribeConnStatus(){
   if(saved){ enterApp(saved); }
   else{ loadUsuariosArea(); } // precarga claves para validar más rápido al elegir área
 })();
-
-/* ============================= PWA (instalar en el dispositivo) ============================= */
-if('serviceWorker' in navigator){
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('service-worker.js').catch(err => console.warn('No se pudo registrar el service worker:', err));
-  });
-}
 </script>
 </body>
 </html>
