@@ -2556,6 +2556,7 @@ async function renderInventario(){
       <button class="tabbtn ${InvState.tab==='kardex'?'active':''}" data-tab="kardex" onclick="invGoTab('kardex')">Kardex</button>
       <button class="tabbtn ${InvState.tab==='items'?'active':''}" data-tab="items" onclick="invGoTab('items')">Items</button>
       <button class="tabbtn ${InvState.tab==='formulacion'?'active':''}" data-tab="formulacion" onclick="invGoTab('formulacion')">Formulación</button>
+      <button class="tabbtn ${InvState.tab==='ajustes'?'active':''}" data-tab="ajustes" onclick="invGoTab('ajustes')">Ajustes</button>
     </div>
     <div id="invBody"><div class="empty-state">Cargando…</div></div>
   `;
@@ -2567,6 +2568,7 @@ function invRenderBody(){
   if(InvState.tab === 'kardex') return renderKardexTab();
   if(InvState.tab === 'items') return renderItemsTab();
   if(InvState.tab === 'formulacion') return renderFormulacionTab();
+  if(InvState.tab === 'ajustes') return renderAjustesTab();
 }
 
 /* ============================================================
@@ -2822,6 +2824,67 @@ async function guardarAjuste(codigo, nAjuste){
   await invLoad(true);
   closeModalAll();
   openKardexHistory(codigo);
+}
+
+/* ---------------- Ajustes (pestaña con todos los ajustes de Kardex) ---------------- */
+let AjustesState = { q:'', rows:null };
+async function renderAjustesTab(){
+  const body = document.getElementById('invBody');
+  if(!body) return;
+  body.innerHTML = `
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="ajListSearch" placeholder="Buscar por ítem, lote o motivo…" value="${escHtml(AjustesState.q)}">
+      </div>
+    </div>
+    <div class="list-meta" id="ajListMeta">Cargando…</div>
+    <div class="reg-list" id="ajList"></div>
+  `;
+  document.getElementById('ajListSearch').addEventListener('input', e=>{ AjustesState.q = e.target.value; renderAjustesList(); });
+  await ajustesLoad();
+}
+async function ajustesLoad(){
+  const { data, error } = await sb.from('kardex_movimientos').select('*').ilike('comprobante', 'Ajuste N°%').order('fecha', {ascending:false}).order('created_at', {ascending:false}).limit(1000);
+  AjustesState.rows = error ? [] : (data||[]);
+  renderAjustesList();
+}
+function ajustesFiltered(){
+  let rows = AjustesState.rows || [];
+  const q = (AjustesState.q||'').trim().toUpperCase();
+  if(q){
+    rows = rows.filter(r=>{
+      const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+      return (r.item_codigo||'').toUpperCase().includes(q) || (item && item.nombre.toUpperCase().includes(q)) || (r.lote||'').toUpperCase().includes(q) || (r.comprobante||'').toUpperCase().includes(q);
+    });
+  }
+  return rows;
+}
+function renderAjustesList(){
+  const list = document.getElementById('ajList');
+  const meta = document.getElementById('ajListMeta');
+  if(!list) return;
+  const rows = ajustesFiltered();
+  meta.textContent = rows.length + ' ajuste(s) encontrado(s)';
+  if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin ajustes registrados.</div>'; return; }
+  list.innerHTML = rows.map(r=>{
+    const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+    const delta = Number(r.entra||0) - Number(r.sale||0);
+    const motivo = (r.comprobante||'').replace(/^Ajuste N°\s*\d+:\s*/i, '');
+    return `<div class="reg-row">
+      <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · Lote ${escHtml(r.lote||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)}</span><span class="sub">${escHtml(motivo)}</span></div>
+      <div class="rval"><span class="sup">AJUSTE</span><span class="big" style="color:${delta>=0?'var(--ok)':'var(--danger)'};">${delta>0?'+':''}${fmtNum(delta)}</span></div>
+      <button class="redit" title="Eliminar" onclick="eliminarAjuste('${r.id}')">✕</button>
+    </div>`;
+  }).join('');
+}
+async function eliminarAjuste(id){
+  if(!confirm('¿Eliminar este ajuste? Se revertirá su efecto en el Kardex.')) return;
+  const { error } = await sb.from('kardex_movimientos').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  AjustesState.rows = (AjustesState.rows||[]).filter(r=>r.id!==id);
+  await invLoad(true);
+  toast('Ajuste eliminado');
+  renderAjustesList();
 }
 
 /* ============================================================
