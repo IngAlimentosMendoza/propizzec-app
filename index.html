@@ -3931,13 +3931,26 @@ async function pfLoadParadasSection(cronogramaId){
           <button class="btn" onclick="pfAddMotivoParada('${cronogramaId}')">+ Añadir</button>
         </div>
       </div>
+      <div class="field">
+        <label>Ítem que están utilizando <span style="text-transform:none;color:var(--muted);">(opcional)</span></label>
+        <input type="text" id="pfPdItemSearch" placeholder="Buscar por código o nombre… (opcional)" oninput="pfPdBuscarItem(this.value)">
+        <div class="search-results" id="pfPdItemResults"></div>
+        <div id="pfPdItemElegido" class="readonly-box" style="margin-top:8px;display:none;"></div>
+      </div>
+      <div class="field"><label>Cantidad utilizada <span style="text-transform:none;color:var(--muted);">(opcional)</span></label><input type="text" id="pfPdCantidad" placeholder="Déjalo vacío si no aplica…"></div>
+      <div class="field"><label>Responsable *</label>
+        <select id="pfPdResponsable">
+          <option value="">Selecciona…</option>
+          ${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp').map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
+        </select>
+      </div>
       <button class="btn primary" style="width:100%;--accent:var(--paradas)" onclick="pfIniciarParada('${cronogramaId}')">Iniciar</button>
     `}
     <div class="list-meta" style="margin-top:16px;">Historial de esta orden</div>
     <div class="reg-list">
       ${paradas.length ? paradas.map(p=>`
         <div class="reg-row">
-          <div class="rmain"><span class="sup">${p.inicio?new Date(p.inicio).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}):''}${p.fin?(' – '+new Date(p.fin).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})):''}</span><span class="big">${escHtml(p.motivo||'—')}</span></div>
+          <div class="rmain"><span class="sup">${p.inicio?new Date(p.inicio).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}):''}${p.fin?(' – '+new Date(p.fin).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})):''} · ${escHtml(p.item_codigo||'N/A')} · ${escHtml(p.cantidad||'N/A')}</span><span class="big">${escHtml(p.motivo||'—')}</span><span class="sub">${escHtml(p.responsable||'')}</span></div>
           <div class="rval"><span class="big">${fmtNum(p.minutos)}</span><span class="sub">min</span></div>
         </div>
       `).join('') : '<div class="empty-state">Sin paradas registradas</div>'}
@@ -3970,22 +3983,50 @@ async function pfAddMotivoParada(cronogramaId){
   pfLoadParadasSection(cronogramaId);
   toast('Motivo agregado');
 }
+let pfPdItemState = null;
+function pfPdBuscarItem(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('pfPdItemResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; return; }
+  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="pfPdElegirItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+function pfPdElegirItem(codigo, nombre){
+  pfPdItemState = { codigo, nombre };
+  const s = document.getElementById('pfPdItemSearch'); if(s) s.value='';
+  const r = document.getElementById('pfPdItemResults'); if(r) r.innerHTML='';
+  const box = document.getElementById('pfPdItemElegido');
+  if(box){ box.style.display='flex'; box.style.justifyContent='space-between'; box.style.alignItems='center'; box.innerHTML = `<span><b>${escHtml(codigo)}</b> — ${escHtml(nombre)}</span><button class="redit" onclick="pfPdQuitarItem()">✕</button>`; }
+}
+function pfPdQuitarItem(){
+  pfPdItemState = null;
+  const box = document.getElementById('pfPdItemElegido');
+  if(box){ box.style.display='none'; box.innerHTML=''; }
+}
 async function pfIniciarParada(cronogramaId){
   const sel = document.getElementById('pfPdMotivo').value;
   const nuevo = document.getElementById('pfPdMotivoNuevo').value.trim();
   const motivo = nuevo || sel || null;
+  const responsable = document.getElementById('pfPdResponsable').value;
+  if(!responsable){ toast('Selecciona el responsable — es obligatorio'); return; }
+  const item_codigo = pfPdItemState ? pfPdItemState.codigo : 'N/A';
+  const item_nombre = pfPdItemState ? pfPdItemState.nombre : 'N/A';
+  const cantidad = (document.getElementById('pfPdCantidad').value||'').trim() || 'N/A';
   const horaInicioManual = document.getElementById('pfParadaHoraInicio').value;
   const horaFinManual = document.getElementById('pfParadaHoraFin').value;
   const inicioISO = horaInicioManual ? hmToISOToday(horaInicioManual) : new Date().toISOString();
+  const payload = { cronograma_id: cronogramaId, inicio: inicioISO, motivo, item_codigo, item_nombre, cantidad, responsable };
   if(horaFinManual){
     const finISO = hmToISOToday(horaFinManual);
     const minutos = Math.max(0, Math.round(((new Date(finISO).getTime()-new Date(inicioISO).getTime())/60000)*100)/100);
-    const { error } = await sb.from('paradas').insert({ cronograma_id: cronogramaId, inicio: inicioISO, fin: finISO, minutos, motivo });
+    const { error } = await sb.from('paradas').insert({ ...payload, fin: finISO, minutos });
     if(error){ toast('Error: '+error.message); return; }
   } else {
-    const { error } = await sb.from('paradas').insert({ cronograma_id: cronogramaId, inicio: inicioISO, motivo });
+    const { error } = await sb.from('paradas').insert(payload);
     if(error){ toast('Error: '+error.message); return; }
   }
+  pfPdItemState = null;
   pfLoadParadasSection(cronogramaId);
 }
 async function pfDetenerParada(id, cronogramaId){
@@ -4746,7 +4787,7 @@ async function paradasRegReload(){
   paradasRegRows = (paradas||[]).map(p=>{
     const cr = cronoMap[p.cronograma_id] || {};
     const item = (cacheItems||[]).find(i=>i.codigo===cr.item_codigo);
-    return { fecha: cr.fecha, item_codigo: cr.item_codigo||'', item_nombre: item?item.nombre:(cr.item_codigo||''), orden_produccion: cr.orden_produccion||'', inicio:p.inicio, fin:p.fin, minutos:p.minutos, motivo:p.motivo };
+    return { fecha: cr.fecha, item_codigo: cr.item_codigo||'', item_nombre: item?item.nombre:(cr.item_codigo||''), orden_produccion: cr.orden_produccion||'', inicio:p.inicio, fin:p.fin, minutos:p.minutos, motivo:p.motivo, parada_item_codigo:p.item_codigo||'N/A', parada_item_nombre:p.item_nombre||'N/A', parada_cantidad:p.cantidad||'N/A', responsable:p.responsable||'' };
   });
   paradasRegRenderList();
 }
@@ -4765,7 +4806,7 @@ function paradasRegRenderList(){
   if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin paradas en este rango</div>'; return; }
   list.innerHTML = rows.map(r=>`
     <div class="reg-row">
-      <div class="rmain"><span class="sup">${ddMMyy(r.fecha)} · ${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion)}</span><span class="big">${escHtml(r.item_nombre)} — ${escHtml(r.motivo||'sin motivo')}</span></div>
+      <div class="rmain"><span class="sup">${ddMMyy(r.fecha)} · ${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion)}</span><span class="big">${escHtml(r.item_nombre)} — ${escHtml(r.motivo||'sin motivo')}</span><span class="sub">Usó: ${escHtml(r.parada_item_codigo)} ${r.parada_item_nombre!=='N/A'?('— '+escHtml(r.parada_item_nombre)):''} · Cant. ${escHtml(r.parada_cantidad)} · ${escHtml(r.responsable)}</span></div>
       <div class="rval"><span class="big">${fmtNum(r.minutos)}</span><span class="sub">min</span></div>
     </div>
   `).join('');
@@ -4950,6 +4991,10 @@ function etiqRenderModal(){
         ${responsables.map(c=>`<option value="${escHtml(c.nombre)}" ${EtiqModalState.responsable===c.nombre?'selected':''}>${escHtml(c.nombre)}</option>`).join('')}
       </select>
     </div>
+    <div class="inline-add" style="margin-bottom:14px;">
+      <input type="text" id="etiqRespNuevo" placeholder="Escribir nuevo responsable…">
+      <button class="btn" onclick="etiqAddResponsable()">+ Añadir</button>
+    </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarModal()">Guardar</button>
@@ -5096,6 +5141,23 @@ function etiqConfirmarLotes(idx){
   r.lotes_consumidos = seleccionados;
   closeModal();
   etiqRenderMeListInner();
+}
+async function etiqAddResponsable(){
+  const input = document.getElementById('etiqRespNuevo');
+  const nombre = input.value.trim();
+  if(!nombre){ toast('Escribe un nombre'); return; }
+  const { error } = await sb.from('catalogos').insert({ tipo:'responsable_mp', nombre });
+  if(error){ toast('Error: '+error.message); return; }
+  const { data } = await sb.from('catalogos').select('*').eq('activo',true);
+  if(data) cacheCatalogosPlan = data;
+  const sel = document.getElementById('etiqModalResp');
+  if(sel){
+    const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
+    sel.innerHTML = '<option value="">Selecciona…</option>' + responsables.map(r=>`<option value="${escHtml(r.nombre)}" ${r.nombre===nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('');
+    sel.value = nombre;
+  }
+  input.value = '';
+  toast('Responsable agregado');
 }
 async function etiqGuardarModal(){
   const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId);
@@ -6943,6 +7005,7 @@ async function selLoad(force){
   if(!sb) return;
   const tasks = [];
   if(force || !cacheItems) tasks.push(invLoad(true));
+  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=r.data||[]));
   if(force || !cacheCatalogosSellado) tasks.push(sb.from('catalogos').select('*').eq('tipo','responsable_sellado').eq('activo',true).then(r=>cacheCatalogosSellado=r.data||[]));
   if(force || !cacheMetasSellado) tasks.push(sb.from('metas_sellado').select('*').then(r=>cacheMetasSellado=r.data||[]));
   tasks.push(sb.from('catalogos').select('id,nombre').eq('tipo','sellado_tipo_parada').eq('activo',true).order('nombre').then(r=>{
@@ -6964,12 +7027,21 @@ async function selLoad(force){
     if(!SelladoState.activa && SelladoState.abiertas.length) SelladoState.activa = SelladoState.abiertas[0];
     if(SelladoState.activa && !SelladoState.abiertas.includes(SelladoState.activa)) SelladoState.activa = SelladoState.abiertas[0] || null;
   }));
-  tasks.push(selCargarPendientesSellado());
   await Promise.all(tasks);
+  // Se carga después (no en paralelo) porque necesita cacheItems y cacheFormulacion
+  // ya listos para poder filtrar por si el producto tiene cajas en su fórmula.
+  await selCargarPendientesSellado();
 }
 // Productos terminados ya aprobados en Monitoreo, con la cantidad que aún falta
 // sellar (producido menos lo ya sellado hasta ahora, para ese mismo lote).
 let cacheSelladoPendientes = [];
+function productoTieneCajas(itemCodigo){
+  return (cacheFormulacion||[]).some(f=>{
+    if(f.cod_producto_principal!==itemCodigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, SEL_CAJAS_PERMITIDAS);
+  });
+}
 async function selCargarPendientesSellado(){
   // Ahora se toma directo de Cronograma (en cuanto se agrega la orden), sin
   // esperar a que esté producida ni aprobada en Monitoreo — usa la cantidad
@@ -6990,6 +7062,7 @@ async function selCargarPendientesSellado(){
   });
   const porClave = {};
   ordenes.forEach(p=>{
+    if(!productoTieneCajas(p.item_codigo)) return; // solo productos con caja definida en su fórmula
     const cantidadReal = p.cantidad_real!=null ? Number(p.cantidad_real) : (p.cantidad_programada!=null ? Number(p.cantidad_programada) : 0);
     if(cantidadReal<=0) return;
     const clave = p.item_codigo+'|'+(p.lote||'');
@@ -7890,7 +7963,7 @@ function selRenderItemList(tipo){
     if(it.es_parada){
       rowClass = 'sel-row-parada';
       nombreHtml = `<span class="sup">⏸ PARADA</span><span class="nm">${escHtml(it.actividad_parada||'')}</span>`;
-      botones = `<button class="stop" title="Terminar parada" onclick="selDetenerParadaIndependiente('${tipo}','${it.id}')">■</button>`;
+      botones = `<button class="stop" title="Terminar parada" onclick="openSelParadaDetalleModal('${tipo}','${it.id}')">■</button>`;
     } else if(it.estado_timer==='pausado'){
       rowClass = 'sel-row-pausado';
       const ultimaPausa = (it.pausas||[])[((it.pausas||[]).length-1)];
@@ -7929,6 +8002,86 @@ async function selDetenerParadaIndependiente(tipo, itemId){
   it.minutos_realizado = Math.round(selCalcMinutos(it)*100)/100;
   it.estado_timer = 'detenido';
   await selPersistItems(tipo);
+  selRenderItemList(tipo);
+  toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
+}
+function openSelParadaDetalleModal(tipo, itemId){
+  const it = selFindItem(tipo, itemId);
+  if(!it) return;
+  const responsables = (cacheCatalogosSellado||[]);
+  openModal(`
+    <h3>${escHtml(it.actividad_parada||'Parada')}</h3>
+    <div class="msub">Terminar y registrar detalle</div>
+    <div class="field">
+      <label>Ítem utilizado (opcional)</label>
+      <input type="text" id="selParadaItemSearch" placeholder="Buscar por código o nombre… (si no aplica, deja vacío)" value="${it.item_codigo && it.item_codigo!=='N/A' ? escHtml(it.item_codigo+' — '+it.item_nombre) : ''}" oninput="selParadaBuscarItem(this.value)">
+      <div class="search-results" id="selParadaItemResults"></div>
+    </div>
+    <div class="field"><label>Cantidad utilizada (opcional)</label><input type="text" inputmode="decimal" id="selParadaCantidad" placeholder="Si no aplica, deja vacío" value="${it.cantidad_parada && it.cantidad_parada!=='N/A' ? escHtml(it.cantidad_parada) : ''}"></div>
+    <div class="field"><label>Responsable *</label>
+      <select id="selParadaResp">
+        <option value="">Selecciona…</option>
+        ${responsables.map(r=>`<option value="${escHtml(r.nombre)}" ${it.responsable===r.nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="inline-add" style="margin-bottom:14px;">
+      <input type="text" id="selParadaRespNuevo" placeholder="Escribir nuevo responsable…">
+      <button class="btn" onclick="selParadaAddResponsable()">+ Añadir</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarParadaDetalle('${tipo}','${itemId}')">Terminar parada</button>
+    </div>
+  `);
+  SelParadaItemState = { itemId: null, itemNombre: null };
+  if(it.item_codigo && it.item_codigo!=='N/A') SelParadaItemState = { itemId: it.item_codigo, itemNombre: it.item_nombre };
+}
+let SelParadaItemState = { itemId:null, itemNombre:null };
+function selParadaBuscarItem(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('selParadaItemResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; SelParadaItemState = { itemId:null, itemNombre:null }; return; }
+  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="selParadaElegirItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+function selParadaElegirItem(codigo, nombre){
+  SelParadaItemState = { itemId:codigo, itemNombre:nombre };
+  const s = document.getElementById('selParadaItemSearch'); if(s) s.value = codigo+' — '+nombre;
+  const r = document.getElementById('selParadaItemResults'); if(r) r.innerHTML = '';
+}
+async function selParadaAddResponsable(){
+  const input = document.getElementById('selParadaRespNuevo');
+  const nombre = input.value.trim();
+  if(!nombre){ toast('Escribe un nombre'); return; }
+  const { error } = await sb.from('catalogos').insert({ tipo:'responsable_sellado', nombre });
+  if(error){ toast('Error: '+error.message); return; }
+  const { data } = await sb.from('catalogos').select('*').eq('tipo','responsable_sellado').eq('activo',true);
+  if(data) cacheCatalogosSellado = data;
+  const sel = document.getElementById('selParadaResp');
+  if(sel){
+    sel.innerHTML = '<option value="">Selecciona…</option>' + (cacheCatalogosSellado||[]).map(r=>`<option value="${escHtml(r.nombre)}" ${r.nombre===nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('');
+    sel.value = nombre;
+  }
+  input.value = '';
+  toast('Responsable agregado');
+}
+async function selConfirmarParadaDetalle(tipo, itemId){
+  const it = selFindItem(tipo, itemId);
+  if(!it) return;
+  const responsable = document.getElementById('selParadaResp').value;
+  if(!responsable){ toast('El responsable es obligatorio'); return; }
+  const cantidadTxt = (document.getElementById('selParadaCantidad').value||'').trim();
+  it.item_codigo = SelParadaItemState.itemId || 'N/A';
+  it.item_nombre = SelParadaItemState.itemNombre || 'N/A';
+  it.cantidad_parada = cantidadTxt || 'N/A';
+  it.responsable = responsable;
+  const nowIso = new Date().toISOString();
+  it.hora_fin = nowIso;
+  it.minutos_realizado = Math.round(selCalcMinutos(it)*100)/100;
+  it.estado_timer = 'detenido';
+  await selPersistItems(tipo);
+  closeModal();
   selRenderItemList(tipo);
   toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
 }
@@ -8265,7 +8418,7 @@ async function openSelLotePicker(tipo, itemId){
     <h3>${escHtml(it.item_nombre)}</h3>
     <div class="msub">Selecciona el lote disponible en Kardex</div>
     <div id="selLoteList"><div class="empty-state">Cargando…</div></div>
-    <div class="modal-actions"><button class="btn ghost" onclick="closeModalAll();openSelItemModal('${tipo}','${itemId}')">Volver</button></div>
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Volver</button></div>
   `);
   const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', it.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('selLoteList');
@@ -8278,8 +8431,12 @@ async function openSelLotePicker(tipo, itemId){
 function selPickLote(tipo, itemId, lote){
   const it = selFindItem(tipo, itemId);
   if(it) it.lote = lote;
-  closeModalAll();
-  openSelItemModal(tipo, itemId);
+  // Se vuelve a la ventana de finalizar TAL COMO ESTABA (no se reconstruye desde
+  // cero), para no perder los cartones, observaciones o responsable que ya se
+  // hubieran llenado antes de elegir el lote — solo se corrige el campo Lote.
+  closeModal();
+  const loteInput = document.getElementById('selLote');
+  if(loteInput) loteInput.value = lote;
 }
 
 /* ============================================================
@@ -8324,7 +8481,10 @@ function selRegFlatten(){
         hora_inicio: it.hora_inicio, hora_fin: it.hora_fin, minutos_realizado: it.minutos_realizado,
         cantidad: it.cantidad, unidades_hora: it.unidades_hora, meta_selladora: it.meta_selladora,
         pct_cumplimiento: it.pct_cumplimiento, clasificacion_kpi: it.clasificacion_kpi,
-        responsable: it.responsable, observaciones: it.observaciones
+        responsable: it.responsable,
+        observaciones: it.es_parada
+          ? [it.observaciones, (it.item_codigo && it.item_codigo!=='N/A') ? ('Ítem usado: '+it.item_codigo+' — '+(it.item_nombre||'')) : null, (it.cantidad_parada && it.cantidad_parada!=='N/A') ? ('Cantidad: '+it.cantidad_parada) : null].filter(Boolean).join(' · ')
+          : it.observaciones
       });
     });
   });
