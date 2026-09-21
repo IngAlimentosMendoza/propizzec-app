@@ -527,6 +527,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="planificacion" onclick="goModule('planificacion')"><span class="ic">🗓️</span> Planificación</button>
     <button class="side-item" data-mod="etiquetado" onclick="goModule('etiquetado')"><span class="ic">🏷️</span> Etiquetado</button>
     <button class="side-item" data-mod="monitoreo" onclick="goModule('monitoreo')"><span class="ic">📊</span> Monitoreo</button>
+    <button class="side-item" data-mod="calidad" onclick="goModule('calidad')"><span class="ic">🔬</span> Calidad</button>
     <button class="side-item" data-mod="indicadores" onclick="goModule('indicadores')"><span class="ic">📈</span> Indicadores</button>
     <button class="side-item" data-mod="sellado" onclick="goModule('sellado')"><span class="ic">📦</span> Sellado</button>
     <button class="side-item" data-mod="bodega" onclick="goModule('bodega')"><span class="ic">🏬</span> Bodega</button>
@@ -2324,6 +2325,7 @@ const MODULES = {
   planificacion:{ label:'Planificación', color:'--produccion', subs:['Cronograma','Paradas','Registros'] },
   etiquetado:   { label:'Etiquetado',    color:'--traza',      subs:['Actividad','Registros'] },
   monitoreo:    { label:'Monitoreo',     color:'--datos',      subs:['Producción Operativa','Calidad Operativa'] },
+  calidad:      { label:'Calidad',       color:'--calidad',    subs:['Desperdicios','Cuarentena'] },
   indicadores:  { label:'Indicadores',   color:'--calidad',    subs:['KPI Producción','KPI Sellado'] },
   sellado:      { label:'Sellado',       color:'--materia',    subs:['Actividades','Registros'] },
   bodega:       { label:'Bodega',        color:'--traza',      subs:['Recepción','Registros'] },
@@ -2408,6 +2410,7 @@ function renderModule(mod){
   if(mod === 'planificacion'){ renderPlanificacion(); return; }
   if(mod === 'etiquetado'){ renderEtiquetado(); return; }
   if(mod === 'monitoreo'){ renderMonitoreo(); return; }
+  if(mod === 'calidad'){ renderCalidad(); return; }
   if(mod === 'indicadores'){ renderIndicadores(); return; }
   if(mod === 'sellado'){ renderSellado(); return; }
   if(mod === 'bodega'){ renderBodega(); return; }
@@ -2626,8 +2629,10 @@ async function openKardexHistory(codigo){
     </div>
     `}
     <div class="msub">Historial de movimientos (Kardex)</div>
+    <div id="kxLotesActuales" class="reg-list" style="margin-bottom:14px;"><div class="empty-state">Cargando lotes…</div></div>
     <div id="kxHist"><div class="empty-state">Cargando…</div></div>
   `);
+  kxRenderLotesActuales(codigo, item);
   const { data, error } = await sb.from('kardex_movimientos').select('*').eq('item_codigo', codigo).order('fecha', {ascending:true}).order('created_at', {ascending:true});
   const hist = document.getElementById('kxHist');
   if(error || !data){ hist.innerHTML = '<div class="empty-state">No se pudo cargar el historial</div>'; return; }
@@ -2647,7 +2652,22 @@ async function openKardexHistory(codigo){
   }).join('');
   hist.innerHTML = rowsHtml + `<div class="kx-total"><span>StockFin</span><span>${fmtNum(running)} ${escHtml(item?item.medida:'')}</span></div>`;
 }
-
+async function kxRenderLotesActuales(codigo, item){
+  const wrap = document.getElementById('kxLotesActuales');
+  if(!wrap) return;
+  const [{ data: lotes }, { data: cuarentena }] = await Promise.all([
+    sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso'),
+    sb.from('cuarentena_lotes').select('lote').eq('item_codigo', codigo).eq('estado', 'en_cuarentena')
+  ]);
+  const enCuarentena = new Set((cuarentena||[]).map(c=>c.lote));
+  if(!lotes || !lotes.length){ wrap.innerHTML = '<div class="empty-state">Sin lotes con saldo</div>'; return; }
+  wrap.innerHTML = lotes.map(l=>`
+    <div class="reg-row">
+      <div class="rmain"><span class="sup">${escHtml(item?item.nombre:codigo)}${enCuarentena.has(l.lote)?' <b style="color:var(--danger);">EN CUARENTENA</b>':''}</span><span class="big">Lote ${escHtml(l.lote)}</span></div>
+      <div class="rval"><span class="big">${fmtNum(l.cantidad_disponible)}</span><span class="sub">${escHtml(item?item.medida:'')}</span></div>
+    </div>
+  `).join('');
+}
 /* ---------------- Excel de movimientos Kardex ---------------- */
 async function exportKardexExcelAll(){
   toast('Generando Excel…');
@@ -2697,7 +2717,7 @@ async function openAjusteModal(codigo){
     sb.from('kardex_movimientos').select('comprobante').eq('item_codigo', codigo).ilike('comprobante', 'Ajuste N°%'),
     sb.from('kardex_movimientos').select('lote,fecha_elaboracion,fecha_caducidad').eq('item_codigo', codigo)
   ]);
-  const lotesList = lotesRes.data || [];
+  const lotesList = await filtrarLotesDisponibles(codigo, lotesRes.data || []);
   const nAjuste = (ajustesRes.data || []).length + 1;
   const sinLote = item && item.requiere_lote === false;
   const dispNA = (lotesList.find(l=>l.lote==='N/A')||{}).cantidad_disponible || 0;
@@ -3643,6 +3663,11 @@ async function deleteCronogramaRow(id){
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'PRODUCCION N° ' + row.orden_produccion);
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + row.orden_produccion);
   }
+  if(row){
+    for(const ci of (row.cronograma_ingredientes||[])){
+      await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ci.id);
+    }
+  }
   const { error } = await sb.from('cronograma').delete().eq('id', id);
   if(error){ toast('Error: ' + error.message); return; }
   cacheRegistroTodo = null; // invalidar caché de Indicadores
@@ -3931,26 +3956,13 @@ async function pfLoadParadasSection(cronogramaId){
           <button class="btn" onclick="pfAddMotivoParada('${cronogramaId}')">+ Añadir</button>
         </div>
       </div>
-      <div class="field">
-        <label>Ítem que están utilizando <span style="text-transform:none;color:var(--muted);">(opcional)</span></label>
-        <input type="text" id="pfPdItemSearch" placeholder="Buscar por código o nombre… (opcional)" oninput="pfPdBuscarItem(this.value)">
-        <div class="search-results" id="pfPdItemResults"></div>
-        <div id="pfPdItemElegido" class="readonly-box" style="margin-top:8px;display:none;"></div>
-      </div>
-      <div class="field"><label>Cantidad utilizada <span style="text-transform:none;color:var(--muted);">(opcional)</span></label><input type="text" id="pfPdCantidad" placeholder="Déjalo vacío si no aplica…"></div>
-      <div class="field"><label>Responsable *</label>
-        <select id="pfPdResponsable">
-          <option value="">Selecciona…</option>
-          ${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp').map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
-        </select>
-      </div>
       <button class="btn primary" style="width:100%;--accent:var(--paradas)" onclick="pfIniciarParada('${cronogramaId}')">Iniciar</button>
     `}
     <div class="list-meta" style="margin-top:16px;">Historial de esta orden</div>
     <div class="reg-list">
       ${paradas.length ? paradas.map(p=>`
         <div class="reg-row">
-          <div class="rmain"><span class="sup">${p.inicio?new Date(p.inicio).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}):''}${p.fin?(' – '+new Date(p.fin).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})):''} · ${escHtml(p.item_codigo||'N/A')} · ${escHtml(p.cantidad||'N/A')}</span><span class="big">${escHtml(p.motivo||'—')}</span><span class="sub">${escHtml(p.responsable||'')}</span></div>
+          <div class="rmain"><span class="sup">${p.inicio?new Date(p.inicio).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'}):''}${p.fin?(' – '+new Date(p.fin).toLocaleTimeString('es-EC',{hour:'2-digit',minute:'2-digit'})):''}</span><span class="big">${escHtml(p.motivo||'—')}</span></div>
           <div class="rval"><span class="big">${fmtNum(p.minutos)}</span><span class="sub">min</span></div>
         </div>
       `).join('') : '<div class="empty-state">Sin paradas registradas</div>'}
@@ -3983,40 +3995,14 @@ async function pfAddMotivoParada(cronogramaId){
   pfLoadParadasSection(cronogramaId);
   toast('Motivo agregado');
 }
-let pfPdItemState = null;
-function pfPdBuscarItem(q){
-  q = (q||'').trim().toUpperCase();
-  const results = document.getElementById('pfPdItemResults');
-  if(!results) return;
-  if(!q){ results.innerHTML=''; return; }
-  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
-  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="pfPdElegirItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
-}
-function pfPdElegirItem(codigo, nombre){
-  pfPdItemState = { codigo, nombre };
-  const s = document.getElementById('pfPdItemSearch'); if(s) s.value='';
-  const r = document.getElementById('pfPdItemResults'); if(r) r.innerHTML='';
-  const box = document.getElementById('pfPdItemElegido');
-  if(box){ box.style.display='flex'; box.style.justifyContent='space-between'; box.style.alignItems='center'; box.innerHTML = `<span><b>${escHtml(codigo)}</b> — ${escHtml(nombre)}</span><button class="redit" onclick="pfPdQuitarItem()">✕</button>`; }
-}
-function pfPdQuitarItem(){
-  pfPdItemState = null;
-  const box = document.getElementById('pfPdItemElegido');
-  if(box){ box.style.display='none'; box.innerHTML=''; }
-}
 async function pfIniciarParada(cronogramaId){
   const sel = document.getElementById('pfPdMotivo').value;
   const nuevo = document.getElementById('pfPdMotivoNuevo').value.trim();
   const motivo = nuevo || sel || null;
-  const responsable = document.getElementById('pfPdResponsable').value;
-  if(!responsable){ toast('Selecciona el responsable — es obligatorio'); return; }
-  const item_codigo = pfPdItemState ? pfPdItemState.codigo : 'N/A';
-  const item_nombre = pfPdItemState ? pfPdItemState.nombre : 'N/A';
-  const cantidad = (document.getElementById('pfPdCantidad').value||'').trim() || 'N/A';
   const horaInicioManual = document.getElementById('pfParadaHoraInicio').value;
   const horaFinManual = document.getElementById('pfParadaHoraFin').value;
   const inicioISO = horaInicioManual ? hmToISOToday(horaInicioManual) : new Date().toISOString();
-  const payload = { cronograma_id: cronogramaId, inicio: inicioISO, motivo, item_codigo, item_nombre, cantidad, responsable };
+  const payload = { cronograma_id: cronogramaId, inicio: inicioISO, motivo };
   if(horaFinManual){
     const finISO = hmToISOToday(horaFinManual);
     const minutos = Math.max(0, Math.round(((new Date(finISO).getTime()-new Date(inicioISO).getTime())/60000)*100)/100);
@@ -4026,7 +4012,6 @@ async function pfIniciarParada(cronogramaId){
     const { error } = await sb.from('paradas').insert(payload);
     if(error){ toast('Error: '+error.message); return; }
   }
-  pfPdItemState = null;
   pfLoadParadasSection(cronogramaId);
 }
 async function pfDetenerParada(id, cronogramaId){
@@ -4203,13 +4188,23 @@ async function crConfirmCambioProducto(id, codigo){
   if(!confirm('¿Cambiar el producto de esta orden? Se reemplazará la lista de ingredientes por la fórmula del nuevo producto.')) return;
   const { error } = await sb.from('cronograma').update({ item_codigo: codigo }).eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
+  // Si algún ingrediente de la fórmula anterior ya tenía lote elegido (y por lo
+  // tanto ya se había descontado del Kardex), hay que revertir ese descuento
+  // antes de reemplazar la lista de ingredientes por la del nuevo producto.
+  for(const ci of (row.cronograma_ingredientes||[])){
+    await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ci.id);
+  }
   await sb.from('cronograma_ingredientes').delete().eq('cronograma_id', id);
-  const nuevaFormula = (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===codigo);
+  const nuevaFormula = (cacheFormulacion||[]).filter(f=>{
+    if(f.cod_producto_principal!==codigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return esIngredienteDeCronograma(compItem);
+  });
   if(nuevaFormula.length){
     const rows = nuevaFormula.map(f=>({ cronograma_id: id, item_codigo: f.cod_componente }));
     await sb.from('cronograma_ingredientes').insert(rows);
   }
-  await planLoad(true);
+  await Promise.all([planLoad(true), invLoad(true)]);
   toast('Producto actualizado');
   closeModalAll();
   openCronogramaForm(id);
@@ -4350,11 +4345,14 @@ async function crIngAdd(cronogramaId, codigo){
 }
 async function crIngDelete(ciId, cronogramaId){
   if(!confirm('¿Eliminar este ingrediente de la orden?')) return;
+  // Si ese ingrediente ya tenía un lote elegido (y por lo tanto ya se había
+  // descontado del Kardex), hay que revertir ese descuento antes de borrarlo.
+  await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ciId);
   const { error } = await sb.from('cronograma_ingredientes').delete().eq('id', ciId);
   if(error){ toast('Error: '+error.message); return; }
-  await planLoad(true);
+  await Promise.all([planLoad(true), invLoad(true)]);
   pfRenderIngredientes(cronogramaId);
-  toast('Ingrediente eliminado');
+  toast('Ingrediente eliminado y su Kardex revertido');
 }
 
 /* ---------------- Captura Inicio / Fin / Cantidad directa, con calculadora ---------------- */
@@ -4498,9 +4496,10 @@ async function openLotePicker(cronogramaIngId){
       <button class="btn primary" style="--accent:var(--produccion)" onclick="confirmLotes('${cronogramaIngId}')">Confirmar</button>
     </div>
   `);
-  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', ci.item_codigo).order('fecha_ingreso');
+  const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', ci.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('loteList');
   if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const data = await filtrarLotesDisponibles(ci.item_codigo, dataRaw);
   const previamente = new Set((ci.lotes_consumidos||[]).map(l=>l.lote));
   loteConsumo = { total: Number(ci.cantidad_consumida||0), seleccion:{}, disponibles: data||[] };
   (ci.lotes_consumidos||[]).forEach(l=>{ loteConsumo.seleccion[l.lote] = l.cantidad; });
@@ -4547,10 +4546,36 @@ async function confirmLotes(cronogramaIngId){
   }
   const { error } = await sb.from('cronograma_ingredientes').update({ lotes_consumidos: seleccionados }).eq('id', cronogramaIngId);
   if(error){ toast('Error: ' + error.message); return; }
-  await planLoad(true);
+  // El ingrediente se descuenta del Kardex de inmediato, en cuanto se elige el
+  // lote — no espera a que la producción se apruebe en Monitoreo, porque ese
+  // lote físicamente ya está siendo usado en ESTA producción y no debe seguir
+  // apareciendo disponible para otra orden que se esté armando al mismo tiempo.
+  const row0 = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
+  const ci0 = row0 && (row0.cronograma_ingredientes||[]).find(ci=>ci.id===cronogramaIngId);
+  if(row0 && ci0){
+    const { error: errK } = await kardexEscribirIngredienteConsumo(cronogramaIngId, ci0.item_codigo, row0.fecha, seleccionados);
+    if(errK) toast('Se guardó el lote, pero hubo un error al descontar del Kardex: ' + errK.message);
+  }
+  await Promise.all([planLoad(true), invLoad(true)]);
   closeModalAll();
   const row = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
   if(row) openCronogramaForm(row.id);
+}
+// Descuenta del Kardex el consumo de UN ingrediente de una orden (reconciliable:
+// borra lo anterior de ese mismo ingrediente y vuelve a insertar lo actual, así
+// que se puede volver a elegir el lote sin duplicar el descuento).
+async function kardexEscribirIngredienteConsumo(cronogramaIngId, itemCodigo, fecha, lotesConsumidos){
+  const comprobante = 'CONSUMO-ING-' + cronogramaIngId;
+  const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
+  if(errDel) return { error: errDel };
+  const movimientos = (lotesConsumidos||[]).filter(l=>Number(l.cantidad)>0).map(l=>({
+    item_codigo: itemCodigo, fecha, lote: l.lote, comprobante, entra:0, sale: Number(l.cantidad)
+  }));
+  if(movimientos.length){
+    const { error } = await sb.from('kardex_movimientos').insert(movimientos);
+    if(error) return { error };
+  }
+  return { error: null };
 }
 
 /* ---------------- Finalizar orden → ya NO escribe en Kardex (eso pasa al Verificar en Monitoreo) ---------------- */
@@ -4560,6 +4585,9 @@ async function confirmLotes(cronogramaIngId){
 // llamar varias veces sin duplicar, porque primero borra lo que esta
 // orden haya generado antes.
 async function kardexEscribirProduccion(row){
+  // Los ingredientes YA se descontaron del Kardex al momento de elegir el lote
+  // (ver confirmLotes/kardexEscribirIngredienteConsumo) — aquí solo se registra
+  // el producto terminado, que sí depende de que Monitoreo confirme la cantidad real.
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   const cantidad = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
   const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
@@ -4568,13 +4596,6 @@ async function kardexEscribirProduccion(row){
     const loteProducto = (item && item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
     movimientos.push({ item_codigo: row.item_codigo, fecha: row.fecha, lote: loteProducto, comprobante, entra: cantidad, sale: 0 });
   }
-  (row.cronograma_ingredientes||[]).forEach(ci=>{
-    (ci.lotes_consumidos||[]).forEach(l=>{
-      if(Number(l.cantidad) > 0){
-        movimientos.push({ item_codigo: ci.item_codigo, fecha: row.fecha, lote: l.lote, comprobante, entra: 0, sale: Number(l.cantidad) });
-      }
-    });
-  });
   const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   if(errDel) return { error: errDel };
   if(movimientos.length){
@@ -4787,7 +4808,7 @@ async function paradasRegReload(){
   paradasRegRows = (paradas||[]).map(p=>{
     const cr = cronoMap[p.cronograma_id] || {};
     const item = (cacheItems||[]).find(i=>i.codigo===cr.item_codigo);
-    return { fecha: cr.fecha, item_codigo: cr.item_codigo||'', item_nombre: item?item.nombre:(cr.item_codigo||''), orden_produccion: cr.orden_produccion||'', inicio:p.inicio, fin:p.fin, minutos:p.minutos, motivo:p.motivo, parada_item_codigo:p.item_codigo||'N/A', parada_item_nombre:p.item_nombre||'N/A', parada_cantidad:p.cantidad||'N/A', responsable:p.responsable||'' };
+    return { fecha: cr.fecha, item_codigo: cr.item_codigo||'', item_nombre: item?item.nombre:(cr.item_codigo||''), orden_produccion: cr.orden_produccion||'', inicio:p.inicio, fin:p.fin, minutos:p.minutos, motivo:p.motivo };
   });
   paradasRegRenderList();
 }
@@ -4806,7 +4827,7 @@ function paradasRegRenderList(){
   if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin paradas en este rango</div>'; return; }
   list.innerHTML = rows.map(r=>`
     <div class="reg-row">
-      <div class="rmain"><span class="sup">${ddMMyy(r.fecha)} · ${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion)}</span><span class="big">${escHtml(r.item_nombre)} — ${escHtml(r.motivo||'sin motivo')}</span><span class="sub">Usó: ${escHtml(r.parada_item_codigo)} ${r.parada_item_nombre!=='N/A'?('— '+escHtml(r.parada_item_nombre)):''} · Cant. ${escHtml(r.parada_cantidad)} · ${escHtml(r.responsable)}</span></div>
+      <div class="rmain"><span class="sup">${ddMMyy(r.fecha)} · ${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion)}</span><span class="big">${escHtml(r.item_nombre)} — ${escHtml(r.motivo||'sin motivo')}</span></div>
       <div class="rval"><span class="big">${fmtNum(r.minutos)}</span><span class="sub">min</span></div>
     </div>
   `).join('');
@@ -5090,9 +5111,10 @@ async function etiqAbrirLotePicker(idx){
       <button class="btn primary" style="--accent:var(--traza)" onclick="etiqConfirmarLotes(${idx})">Confirmar</button>
     </div>
   `);
-  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', r.item_codigo).order('fecha_ingreso');
+  const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', r.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('etiqLoteList');
   if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const data = await filtrarLotesDisponibles(r.item_codigo, dataRaw);
   const previamente = new Set((r.lotes_consumidos||[]).map(l=>l.lote));
   etiqLoteConsumo = { total: Number(cantidad), seleccion:{}, disponibles: data||[], rowIdx: idx };
   (r.lotes_consumidos||[]).forEach(l=>{ etiqLoteConsumo.seleccion[l.lote] = l.cantidad; });
@@ -5335,6 +5357,290 @@ async function monLoad(force){
       .then(r=>cacheOrdenesPendientesBacklog = r.data||[])
   );
   await Promise.all(tasks);
+}
+
+/* ============================================================
+   CALIDAD — Bajas y Mermas del día + Cuarentena de lotes
+   ============================================================ */
+let CalState = { tab:'bajasmermas', desde: todayISO(), hasta: todayISO(), q:'' };
+async function renderCalidad(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="tabbar">
+      <button class="tabbtn ${CalState.tab==='bajasmermas'?'active':''}" data-tab="bajasmermas" onclick="calGoTab('bajasmermas')">Desperdicios</button>
+      <button class="tabbtn ${CalState.tab==='cuarentena'?'active':''}" data-tab="cuarentena" onclick="calGoTab('cuarentena')">Cuarentena</button>
+    </div>
+    <div id="calRoot"><div class="empty-state">Cargando…</div></div>
+  `;
+  const tasks = [];
+  if(!cacheItems) tasks.push(invLoad(true));
+  if(!cacheCatalogosPlan) tasks.push(sb.from('catalogos').select('*').eq('activo',true).then(r=>cacheCatalogosPlan=r.data||[]));
+  await Promise.all(tasks);
+  calRenderBody();
+}
+function calGoTab(tab){ CalState.tab = tab; setActiveTab(tab); calRenderBody(); }
+function calRenderBody(){
+  if(CalState.tab === 'cuarentena') return renderCalCuarentenaTab();
+  return renderCalBajasMermasTab();
+}
+
+/* ---------------- Tab: Bajas y Mermas ---------------- */
+async function renderCalBajasMermasTab(){
+  const root = document.getElementById('calRoot');
+  root.innerHTML = `
+    <div class="card" style="--accent:var(--calidad)">
+      <h2>🔬 Desperdicios</h2>
+      <div class="sub">Resumen de lo que se dio de baja (Sellado → Ajuste) y de la merma de proceso registrada en Planificación, para el rango de fechas elegido.</div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Desde</label><input type="date" id="calDesde" value="${escHtml(CalState.desde)}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="calHasta" value="${escHtml(CalState.hasta)}"></div>
+    </div>
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="calSearch" placeholder="Buscar por producto o motivo…" value="${escHtml(CalState.q)}">
+      </div>
+    </div>
+    <div class="list-meta" id="calMeta">Cargando…</div>
+    <div class="reg-list" id="calList"></div>
+  `;
+  document.getElementById('calDesde').addEventListener('change', e=>{ CalState.desde=e.target.value; calBajasMermasLoad(); });
+  document.getElementById('calHasta').addEventListener('change', e=>{ CalState.hasta=e.target.value; calBajasMermasLoad(); });
+  document.getElementById('calSearch').addEventListener('input', e=>{ CalState.q=e.target.value; calBajasMermasRenderList(); });
+  await calBajasMermasLoad();
+}
+let cacheCalBajasMermas = [];
+async function calBajasMermasLoad(){
+  const desde = CalState.desde || todayISO();
+  const hasta = CalState.hasta || todayISO();
+  const [{ data: bajas }, { data: cronoMermas }] = await Promise.all([
+    sb.from('kardex_movimientos').select('*').ilike('comprobante','%: Bajas%').gte('fecha', desde).lte('fecha', hasta).order('fecha',{ascending:false}),
+    sb.from('cronograma').select('fecha, item_codigo, orden_produccion, lote, merma_proceso, merma_medida, motivo_merma').gt('merma_proceso', 0).gte('fecha', desde).lte('fecha', hasta).order('fecha',{ascending:false})
+  ]);
+  const filas = [];
+  (bajas||[]).forEach(b=>{
+    const item = (cacheItems||[]).find(i=>i.codigo===b.item_codigo);
+    const motivo = (b.comprobante||'').replace(/^Ajuste N°\s*\d+:\s*Bajas\s*-?\s*/i,'') || 'Sin motivo especificado';
+    filas.push({ tipo:'Baja', fecha:b.fecha, item_codigo:b.item_codigo, item_nombre:item?item.nombre:b.item_codigo, lote:b.lote, cantidad:Number(b.sale||0), medida:item?item.medida:'', motivo });
+  });
+  (cronoMermas||[]).forEach(c=>{
+    const item = (cacheItems||[]).find(i=>i.codigo===c.item_codigo);
+    filas.push({ tipo:'Merma', fecha:c.fecha, item_codigo:c.item_codigo, item_nombre:item?item.nombre:c.item_codigo, lote:c.lote, cantidad:Number(c.merma_proceso||0), medida:c.merma_medida||(item?item.medida:''), motivo:c.motivo_merma||'Sin motivo', orden:c.orden_produccion });
+  });
+  filas.sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  cacheCalBajasMermas = filas;
+  calBajasMermasRenderList();
+}
+function calBajasMermasFiltered(){
+  let rows = cacheCalBajasMermas||[];
+  const q = (CalState.q||'').trim().toUpperCase();
+  if(q) rows = rows.filter(r=>(r.item_codigo||'').toUpperCase().includes(q) || (r.item_nombre||'').toUpperCase().includes(q) || (r.motivo||'').toUpperCase().includes(q));
+  return rows;
+}
+function calBajasMermasRenderList(){
+  const list = document.getElementById('calList');
+  const meta = document.getElementById('calMeta');
+  if(!list) return;
+  const rows = calBajasMermasFiltered();
+  const totalBajas = rows.filter(r=>r.tipo==='Baja').length;
+  const totalMermas = rows.filter(r=>r.tipo==='Merma').length;
+  meta.textContent = `${rows.length} registro(s) — ${totalBajas} baja(s) · ${totalMermas} merma(s)`;
+  if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin bajas ni mermas en este rango</div>'; return; }
+  list.innerHTML = rows.map(r=>`
+    <div class="reg-row" style="align-items:flex-start;">
+      <div class="rmain">
+        <div class="sup">${ddMMyy(r.fecha)}</div>
+        <div class="big">${escHtml(r.item_codigo)} — ${escHtml(r.item_nombre)}</div>
+        <div class="sub"><b style="color:${r.tipo==='Baja'?'var(--danger)':'var(--paradas)'};">${r.tipo}</b></div>
+        ${r.lote ? `<div class="sub">Lote ${escHtml(r.lote)}</div>` : ''}
+        <div class="sub">${escHtml(r.motivo||'')}</div>
+      </div>
+      <div class="rval"><span class="big">${fmtNum(r.cantidad)}</span><span class="sub">${escHtml(r.medida)}</span></div>
+    </div>
+  `).join('');
+}
+
+/* ---------------- Tab: Cuarentena ---------------- */
+async function renderCalCuarentenaTab(){
+  const root = document.getElementById('calRoot');
+  root.innerHTML = `
+    <div class="card" style="--accent:var(--calidad)">
+      <h2>🧪 Cuarentena de lotes</h2>
+      <div class="sub">Mientras una cantidad está en cuarentena, no se puede usar en Cronograma, Sellado, Etiquetado, Despacho ni Ajuste. Libérala como Aprobada, o descártala para darla de baja.</div>
+      <div class="field">
+        <label>Buscar producto para poner en cuarentena</label>
+        <input type="text" id="calCuarSearch" placeholder="Buscar por código o nombre…" oninput="calCuarBuscarItem(this.value)">
+        <div class="search-results" id="calCuarResults"></div>
+      </div>
+    </div>
+    <div class="tabbar">
+      <button class="tabbtn ${CalCuarState.sub==='activas'?'active':''}" onclick="calCuarGoSub('activas')">En cuarentena ahora</button>
+      <button class="tabbtn ${CalCuarState.sub==='registros'?'active':''}" onclick="calCuarGoSub('registros')">Registros</button>
+    </div>
+    <div class="list-meta" id="calCuarMeta"></div>
+    <div class="reg-list" id="calCuarList"><div class="empty-state">Cargando…</div></div>
+  `;
+  await calCuarLoad();
+}
+let CalCuarState = { sub:'activas' };
+let cacheCalCuarentena = [];      // solo las activas (en_cuarentena)
+let cacheCalCuarentenaTodas = []; // historial completo, cualquier estado
+function calCuarGoSub(sub){ CalCuarState.sub = sub; calCuarRenderList(); }
+async function calCuarLoad(){
+  const [{ data: activas }, { data: todas }] = await Promise.all([
+    sb.from('cuarentena_lotes').select('*').eq('estado','en_cuarentena').order('fecha_cuarentena',{ascending:false}),
+    sb.from('cuarentena_lotes').select('*').order('fecha_cuarentena',{ascending:false}).limit(500)
+  ]);
+  cacheCalCuarentena = activas||[];
+  cacheCalCuarentenaTodas = todas||[];
+  calCuarRenderList();
+}
+function calCuarRenderList(){
+  const list = document.getElementById('calCuarList');
+  const meta = document.getElementById('calCuarMeta');
+  if(!list) return;
+  const esActivas = CalCuarState.sub==='activas';
+  const rows = esActivas ? (cacheCalCuarentena||[]) : (cacheCalCuarentenaTodas||[]);
+  if(meta) meta.textContent = esActivas ? (rows.length + ' en cuarentena ahora') : (rows.length + ' registro(s) en total');
+  if(!rows.length){ list.innerHTML = '<div class="empty-state">' + (esActivas?'Sin lotes en cuarentena':'Sin registros') + '</div>'; return; }
+  const estadoLabel = { en_cuarentena:'EN CUARENTENA', aprobado:'APROBADO', descartado:'DESCARTADO' };
+  const estadoColor = { en_cuarentena:'var(--danger)', aprobado:'var(--ok)', descartado:'var(--muted)' };
+  list.innerHTML = rows.map(r=>`
+    <div class="reg-row" style="align-items:flex-start;flex-wrap:wrap;">
+      <div class="rmain">
+        <div class="sup">${escHtml(r.item_codigo)} · desde ${ddMMyy(r.fecha_cuarentena)}</div>
+        <div class="big">${escHtml(r.item_nombre)}</div>
+        ${!esActivas ? `<div class="sub"><b style="color:${estadoColor[r.estado]||'var(--muted)'};">${estadoLabel[r.estado]||r.estado}</b></div>` : ''}
+        <div class="sub">Lote ${escHtml(r.lote)}</div>
+        <div class="sub">${fmtNum(r.cantidad)} ${escHtml(r.medida||'')}</div>
+        <div class="sub">${escHtml(r.motivo||'Sin motivo')}</div>
+        <div class="sub">${escHtml(r.responsable||'')}</div>
+        ${r.resuelto_por ? `<div class="sub">Resuelto por ${escHtml(r.resuelto_por)} el ${ddMMyy(r.fecha_resolucion)}</div>` : ''}
+      </div>
+      <div class="rval" style="display:flex;flex-direction:row;gap:6px;align-items:center;">
+        ${esActivas ? `
+          <button class="btn" style="padding:8px 10px;font-size:12px;" onclick="calCuarResolver('${r.id}','aprobado')">✅ Aprobar</button>
+          <button class="btn danger" style="padding:8px 10px;font-size:12px;" onclick="calCuarResolver('${r.id}','descartado')">🗑️ Descartar</button>
+        ` : ''}
+        <button class="redit" title="Eliminar registro" onclick="calCuarEliminar('${r.id}')">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+function calCuarBuscarItem(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('calCuarResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; return; }
+  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="calCuarElegirItem('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+async function calCuarElegirItem(codigo){
+  const item = (cacheItems||[]).find(i=>i.codigo===codigo);
+  const dataRaw = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso').then(r=>r.data);
+  const disponibles = await filtrarLotesDisponibles(codigo, dataRaw||[]); // ya descuenta lo que esté en cuarentena
+  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_calidad');
+  const s = document.getElementById('calCuarSearch'); if(s) s.value='';
+  const r = document.getElementById('calCuarResults'); if(r) r.innerHTML='';
+  openModal(`
+    <h3>${escHtml(item?item.nombre:codigo)}</h3>
+    <div class="msub">${escHtml(codigo)}</div>
+    <div class="field"><label>Lote a poner en cuarentena</label>
+      <select id="calCuarLote" onchange="calCuarLoteSeleccionado(this)">
+        <option value="">Selecciona…</option>
+        ${disponibles.map(l=>`<option value="${escHtml(l.lote)}" data-disp="${l.cantidad_disponible}">${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)} ${escHtml(item?item.medida:'')}</option>`).join('')}
+      </select>
+      ${!disponibles.length ? '<div class="sub" style="margin-top:4px;">Sin lotes disponibles (o ya están todos en cuarentena)</div>' : ''}
+    </div>
+    <div class="field"><label>Cantidad a revisar</label><input type="text" inputmode="decimal" id="calCuarCantidad" placeholder="Elige primero el lote…"></div>
+    <div class="field"><label>Motivo</label><input type="text" id="calCuarMotivo" placeholder="Ej: sospecha de contaminación, revisión pendiente…"></div>
+    <div class="field"><label>Responsable *</label>
+      <select id="calCuarResponsable">
+        <option value="">Selecciona…</option>
+        ${responsables.map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="inline-add" style="margin-bottom:14px;">
+      <input type="text" id="calCuarRespNuevo" placeholder="Escribir nuevo responsable…">
+      <button class="btn" onclick="calCuarAddResponsable()">+ Añadir</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--calidad)" onclick="calCuarGuardar('${escHtml(codigo)}','${escHtml(item?item.nombre:codigo)}','${escHtml(item?item.medida:'')}')">Poner en cuarentena</button>
+    </div>
+  `);
+}
+function calCuarLoteSeleccionado(sel){
+  const opt = sel.options[sel.selectedIndex];
+  const disp = opt ? opt.getAttribute('data-disp') : null;
+  const cantInput = document.getElementById('calCuarCantidad');
+  if(cantInput) cantInput.value = disp || '';
+  cantInput.dataset.max = disp || '';
+}
+async function calCuarAddResponsable(){
+  const input = document.getElementById('calCuarRespNuevo');
+  const nombre = input.value.trim();
+  if(!nombre){ toast('Escribe un nombre'); return; }
+  const { error } = await sb.from('catalogos').insert({ tipo:'responsable_calidad', nombre });
+  if(error){ toast('Error: '+error.message); return; }
+  const { data } = await sb.from('catalogos').select('*').eq('activo',true);
+  if(data) cacheCatalogosPlan = data;
+  const sel = document.getElementById('calCuarResponsable');
+  if(sel){
+    const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_calidad');
+    sel.innerHTML = '<option value="">Selecciona…</option>' + responsables.map(r=>`<option value="${escHtml(r.nombre)}" ${r.nombre===nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('');
+    sel.value = nombre;
+  }
+  input.value = '';
+  toast('Responsable agregado');
+}
+async function calCuarGuardar(codigo, nombre, medida){
+  const lote = document.getElementById('calCuarLote').value;
+  if(!lote){ toast('Selecciona el lote'); return; }
+  const cantInput = document.getElementById('calCuarCantidad');
+  const cantidad = parseFloat((cantInput.value||'0').replace(',','.'));
+  const max = parseFloat(cantInput.dataset.max||'0');
+  if(!cantidad || cantidad<=0){ toast('Ingresa la cantidad a revisar'); return; }
+  if(cantidad > max + 0.001){ toast('La cantidad no puede ser mayor a la disponible (' + fmtNum(max) + ')'); return; }
+  const responsable = document.getElementById('calCuarResponsable').value;
+  if(!responsable){ toast('El responsable es obligatorio'); return; }
+  const motivo = document.getElementById('calCuarMotivo').value.trim();
+  const { error } = await sb.from('cuarentena_lotes').insert({
+    item_codigo: codigo, item_nombre: nombre, lote, medida, cantidad, motivo: motivo||null, responsable, estado:'en_cuarentena'
+  });
+  if(error){ toast('Error: '+error.message); return; }
+  closeModal();
+  await calCuarLoad();
+  toast('Cantidad puesta en cuarentena — ya no se puede usar en ningún selector');
+}
+async function calCuarResolver(id, nuevoEstado){
+  const registro = (cacheCalCuarentena||[]).find(c=>c.id===id);
+  if(!registro) return;
+  const accionTxt = nuevoEstado==='aprobado' ? 'aprobar esta cantidad (vuelve a estar disponible)' : 'DESCARTAR esta cantidad (se dará de baja — no se puede deshacer)';
+  if(!confirm('¿Confirmas ' + accionTxt + '?')) return;
+  const resuelto_por = prompt('¿Quién autoriza esta decisión?', registro.responsable||'');
+  if(!resuelto_por){ toast('Se necesita indicar quién autoriza'); return; }
+  const { error } = await sb.from('cuarentena_lotes').update({
+    estado: nuevoEstado, fecha_resolucion: todayISO(), resuelto_por
+  }).eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  if(nuevoEstado==='descartado' && registro.cantidad>0){
+    // Se da de baja exactamente la cantidad que estaba en cuarentena (no todo el lote).
+    await sb.from('kardex_movimientos').insert({
+      item_codigo: registro.item_codigo, fecha: todayISO(), lote: registro.lote,
+      comprobante: 'BAJA-CUARENTENA-' + id, entra:0, sale: registro.cantidad
+    });
+    await invLoad(true);
+  }
+  await calCuarLoad();
+  toast(nuevoEstado==='aprobado' ? 'Cantidad aprobada — ya está disponible de nuevo' : 'Cantidad descartada y dada de baja');
+}
+async function calCuarEliminar(id){
+  if(!confirm('¿Eliminar este registro de cuarentena? Si estaba activo, la cantidad vuelve a quedar disponible de inmediato.')) return;
+  const { error } = await sb.from('cuarentena_lotes').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  await calCuarLoad();
+  toast('Registro eliminado');
 }
 
 async function renderMonitoreo(){
@@ -6933,6 +7239,23 @@ let SELLADO_ACTIVIDADES = [];
 function normalizaNombre(s){
   return (s||'').trim().toUpperCase().replace(/\s+/g,' '); // colapsa espacios dobles o raros para que coincida aunque haya diferencias de formato
 }
+// Descuenta de la cantidad disponible de cada lote lo que esté en cuarentena
+// (puede ser parcial, no necesariamente todo el lote) — se usa en TODOS los
+// selectores de lote de la app (Cronograma, Sellado, Etiquetado, Despacho,
+// Ajuste), para que nadie pueda usar esa cantidad retenida hasta que Calidad
+// la libere como Aprobado o la descarte.
+async function filtrarLotesDisponibles(itemCodigo, rows){
+  if(!rows || !rows.length) return rows||[];
+  const { data } = await sb.from('cuarentena_lotes').select('lote,cantidad').eq('item_codigo', itemCodigo).eq('estado', 'en_cuarentena');
+  if(!data || !data.length) return rows;
+  const bloqueadoPorLote = {};
+  data.forEach(c=>{ bloqueadoPorLote[c.lote] = (bloqueadoPorLote[c.lote]||0) + Number(c.cantidad||0); });
+  return rows.map(r=>{
+    const bloqueado = bloqueadoPorLote[r.lote];
+    if(!bloqueado) return r;
+    return { ...r, cantidad_disponible: Math.max(0, Number(r.cantidad_disponible||0) - bloqueado) };
+  }).filter(r=>Number(r.cantidad_disponible)>0.001);
+}
 function nombreEnLista(item, lista){
   if(!item) return false;
   const n = normalizaNombre(item.nombre);
@@ -7574,7 +7897,8 @@ function selReetSearchProducto(slot, q){
 }
 async function selReetPickProducto(slot, codigo){
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
-  const { data } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
+  const { data: dataRaw } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
+  const data = await filtrarLotesDisponibles(codigo, dataRaw);
   ReetState[slot] = { codigo, nombre: item?item.nombre:codigo, medida: item?item.medida:'', lote:null, lotes: data||[], nuevoLote:false };
   ReetState.loteDestino = null; ReetState.loteDestinoNuevo = false; // el destino depende del producto elegido
   selReetRenderForm(SelladoState.activa);
@@ -8255,9 +8579,10 @@ async function selAbrirLotePickerCarton(idx){
       <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarLotesCarton(${idx})">Confirmar</button>
     </div>
   `);
-  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
+  const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('selCartonLoteList');
   if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const data = await filtrarLotesDisponibles(c.item_codigo, dataRaw);
   const previamente = new Set((c.lotes_consumidos||[]).map(l=>l.lote));
   selCartonLoteConsumo = { total: Number(cantidad), seleccion:{}, disponibles: data||[], idx };
   (c.lotes_consumidos||[]).forEach(l=>{ selCartonLoteConsumo.seleccion[l.lote] = l.cantidad; });
@@ -8420,7 +8745,8 @@ async function openSelLotePicker(tipo, itemId){
     <div id="selLoteList"><div class="empty-state">Cargando…</div></div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Volver</button></div>
   `);
-  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', it.item_codigo).order('fecha_ingreso');
+  const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', it.item_codigo).order('fecha_ingreso');
+  const data = await filtrarLotesDisponibles(it.item_codigo, dataRaw);
   const listEl = document.getElementById('selLoteList');
   if(error || !data || !data.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles en Kardex (puede que ya haya sido despachado). Puedes escribirlo manualmente en el campo Lote.</div>'; return; }
   listEl.innerHTML = data.map(l=>`
@@ -9801,8 +10127,9 @@ async function despConfirmCantidad(codigo){
       <button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmLotes('${escHtml(codigo)}')">Agregar</button>
     </div>
   `);
-  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
+  const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
   const listEl = document.getElementById('despLoteList');
+  const data = await filtrarLotesDisponibles(codigo, dataRaw);
   despLoteConsumo = { codigo, total: cant, seleccion:{}, disponibles: data||[] };
   if(error || !data || !data.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles registrados en Kardex</div>'; return; }
   listEl.innerHTML = data.map(l=>`
