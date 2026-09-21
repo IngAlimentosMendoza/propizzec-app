@@ -2334,14 +2334,14 @@ let currentModule = 'inventario';
 let currentArea = null;
 // Permisos por área: si un área no aparece aquí (PRODUCCION, CALIDAD), ve todo sin restricción.
 const ROLE_PERMISSIONS = {
-  'MASA':                { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'MASA' },
-  'ACONDICIONAMIENTO 1': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 1' },
-  'ACONDICIONAMIENTO 2': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 2' },
-  'ACONDICIONAMIENTO 3': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 3' },
-  'SELLADO':             { modulos:['inventario','sellado','configuracion'], soloKardex:true },
-  'ETIQUETADO':          { modulos:['inventario','etiquetado','configuracion'], soloKardex:true },
-  'BODEGA':              { modulos:['inventario','bodega','configuracion'], soloKardex:true },
-  'LOGISTICA':           { modulos:['inventario','despacho','configuracion'], soloKardex:true },
+  'MASA':                { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'MASA', defaultModulo:'planificacion' },
+  'ACONDICIONAMIENTO 1': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 1', defaultModulo:'planificacion' },
+  'ACONDICIONAMIENTO 2': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 2', defaultModulo:'planificacion' },
+  'ACONDICIONAMIENTO 3': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 3', defaultModulo:'planificacion' },
+  'SELLADO':             { modulos:['inventario','sellado','configuracion'], soloKardex:true, defaultModulo:'sellado' },
+  'ETIQUETADO':          { modulos:['inventario','etiquetado','configuracion'], soloKardex:true, defaultModulo:'etiquetado' },
+  'BODEGA':              { modulos:['inventario','bodega','configuracion'], soloKardex:true, defaultModulo:'bodega' },
+  'LOGISTICA':           { modulos:['inventario','despacho','configuracion'], soloKardex:true, defaultModulo:'despacho' },
   'MANTENIMIENTO':       { enConstruccion:true }
 };
 function getRolePermiso(area){ return ROLE_PERMISSIONS[area] || null; }
@@ -2378,7 +2378,7 @@ function enterApp(area){
     closeSidebar();
     renderEnConstruccion();
   } else {
-    if(permiso && !permiso.modulos.includes(currentModule)) currentModule = permiso.modulos[0];
+    if(permiso) currentModule = permiso.defaultModulo || permiso.modulos[0];
     goModule(currentModule);
   }
   subscribeConnStatus();
