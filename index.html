@@ -319,6 +319,16 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .ci-row .ci-lote{flex:0 0 auto;}
 .ci-row .ci-lote button{font-size:11px;padding:6px 10px;border-radius:7px;border:1px solid var(--line);background:#F0EFEA;color:var(--ink);font-weight:600;}
 .ci-row .ci-lote button.set{background:var(--produccion);color:#fff;border-color:var(--produccion);}
+.ci-row .ci-val input.ci-input-cant{
+  width:74px;text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;
+  border:none;border-bottom:1.5px dashed var(--line);background:transparent;padding:2px 0;border-radius:0;
+}
+.ci-row .ci-val input.ci-input-cant:focus{outline:none;border-bottom-color:var(--editable);border-bottom-style:solid;box-shadow:none;}
+.ci-row .ci-lote select.ci-lote-select{
+  font-size:11px;padding:6px 24px 6px 10px;border-radius:7px;border:1px solid var(--line);background:#F0EFEA;color:var(--ink);font-weight:600;width:auto;
+}
+.ci-row .ci-lote select.ci-lote-select.set{background:var(--produccion);color:#fff;border-color:var(--produccion);}
+.ci-row .ing-rm{width:26px;height:26px;flex:0 0 auto;border:none;background:#F7ECEA;color:var(--danger);border-radius:7px;}
 
 /* ============ CALCULADORA ============ */
 .calc-display{background:var(--ink);color:#fff;border-radius:10px;padding:16px 14px;text-align:right;
@@ -449,6 +459,11 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .sel-kpi-pill.excelente{background:var(--calidad);}
 .machines-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-bottom:16px;}
 @media(max-width:480px){.machines-grid{grid-template-columns:1fr;}}
+.sel-pendiente-card{
+  background:var(--card);border:1px solid var(--line);border-radius:12px;margin-bottom:8px;
+  cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s ease,border-color .15s ease;
+}
+.sel-pendiente-card:hover{border-color:var(--materia);box-shadow:0 3px 10px rgba(15,23,42,.08);}
 .machine-card{
   background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;
   display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden;
@@ -2213,6 +2228,7 @@ const AREAS = [
   {area:'ACONDICIONAMIENTO 2',  icon:'🧀', color:'--datos'},
   {area:'ACONDICIONAMIENTO 3',  icon:'🥟', color:'--datos'},
   {area:'SELLADO',              icon:'📦', color:'--materia'},
+  {area:'ETIQUETADO',           icon:'🏷️', color:'--traza'},
   {area:'BODEGA',                icon:'🏬', color:'--traza'},
   {area:'LOGISTICA',            icon:'🚚', color:'--paradas'},
   {area:'MANTENIMIENTO',        icon:'🔧', color:'--muted'},
@@ -2222,7 +2238,13 @@ let pendingLoginArea = null;
 
 function renderAreaGrid(){
   const grid = document.getElementById('areaGrid');
-  grid.innerHTML = AREAS.map(a=>`
+  // Las áreas personalizadas que se agregaron en Configuración → Usuarios por área
+  // (y que no están en la lista fija) también deben aparecer aquí.
+  const personalizadas = (usuariosAreaCache||[])
+    .filter(u=>!AREAS.some(a=>a.area===u.area))
+    .map(u=>({area:u.area, icon:'🏷️', color:'--datos'}));
+  const todas = AREAS.concat(personalizadas);
+  grid.innerHTML = todas.map(a=>`
     <button class="area-tile" onclick="openLogin('${a.area.replace(/'/g,"\\'")}')">
       <div class="ic" style="--c:var(${a.color})">${a.icon}</div>
       <div class="lbl">${a.area}</div>
@@ -2309,13 +2331,56 @@ const MODULES = {
   configuracion:{ label:'Configuración', color:'--muted',      subs:['Catálogos','Horarios','Usuarios'] },
 };
 let currentModule = 'inventario';
+let currentArea = null;
+// Permisos por área: si un área no aparece aquí (PRODUCCION, CALIDAD), ve todo sin restricción.
+const ROLE_PERMISSIONS = {
+  'MASA':                { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'MASA' },
+  'ACONDICIONAMIENTO 1': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 1' },
+  'ACONDICIONAMIENTO 2': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 2' },
+  'ACONDICIONAMIENTO 3': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 3' },
+  'SELLADO':             { modulos:['inventario','sellado','configuracion'], soloKardex:true },
+  'ETIQUETADO':          { modulos:['inventario','etiquetado','configuracion'], soloKardex:true },
+  'BODEGA':              { modulos:['inventario','bodega','configuracion'], soloKardex:true },
+  'LOGISTICA':           { modulos:['inventario','despacho','configuracion'], soloKardex:true },
+  'MANTENIMIENTO':       { enConstruccion:true }
+};
+function getRolePermiso(area){ return ROLE_PERMISSIONS[area] || null; }
+function permisoActual(){ return getRolePermiso(currentArea); }
+function aplicarPermisosSidebar(permiso){
+  document.querySelectorAll('.side-item').forEach(b=>{
+    const mod = b.dataset.mod;
+    let visible = true;
+    if(permiso) visible = permiso.enConstruccion ? false : permiso.modulos.includes(mod);
+    b.style.display = visible ? '' : 'none';
+  });
+}
+function renderEnConstruccion(){
+  const app = document.getElementById('app');
+  if(!app) return;
+  app.innerHTML = `
+    <div class="card" style="--accent:var(--muted)">
+      <h2>🔧 Mantenimiento</h2>
+      <div class="sub">Esta sección todavía está en construcción.</div>
+      <div class="stub"><b>🚧 Próximamente</b></div>
+    </div>
+  `;
+}
 
 function enterApp(area){
   document.getElementById('loginScreen').style.display = 'none';
   document.getElementById('appShell').style.display = 'block';
   document.getElementById('areaBadge').textContent = area;
   document.getElementById('sideAreaName').textContent = area;
-  goModule(currentModule);
+  currentArea = area;
+  const permiso = getRolePermiso(area);
+  aplicarPermisosSidebar(permiso);
+  if(permiso && permiso.enConstruccion){
+    closeSidebar();
+    renderEnConstruccion();
+  } else {
+    if(permiso && !permiso.modulos.includes(currentModule)) currentModule = permiso.modulos[0];
+    goModule(currentModule);
+  }
   subscribeConnStatus();
 }
 function toggleSidebar(){
@@ -2330,6 +2395,8 @@ function closeSidebar(){
   document.getElementById('sideOverlay').classList.remove('show');
 }
 function goModule(mod){
+  const permiso = permisoActual();
+  if(permiso && (permiso.enConstruccion || !permiso.modulos.includes(mod))) return; // el área actual no tiene acceso a este módulo
   currentModule = mod;
   document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod===mod));
   closeSidebar();
@@ -2476,6 +2543,14 @@ async function invLoad(force){
 
 async function renderInventario(){
   const app = document.getElementById('app');
+  const soloKardex = !!(permisoActual() && permisoActual().soloKardex);
+  if(soloKardex){
+    InvState.tab = 'kardex';
+    app.innerHTML = `<div id="invBody"><div class="empty-state">Cargando…</div></div>`;
+    await invLoad(false);
+    invRenderBody();
+    return;
+  }
   app.innerHTML = `
     <div class="tabbar">
       <button class="tabbtn ${InvState.tab==='kardex'?'active':''}" data-tab="kardex" onclick="invGoTab('kardex')">Kardex</button>
@@ -2499,6 +2574,7 @@ function invRenderBody(){
    ============================================================ */
 function renderKardexTab(){
   const body = document.getElementById('invBody');
+  const soloLectura = !!(permisoActual() && permisoActual().soloKardex);
   const q = InvState.searchKardex.trim().toUpperCase();
   let rows = (cacheStock||[]).filter(r=>r.activo!==false);
   if(q) rows = rows.filter(r=> (r.codigo||'').toUpperCase().includes(q) || (r.nombre||'').toUpperCase().includes(q));
@@ -2509,7 +2585,7 @@ function renderKardexTab(){
       <div class="search-wrap"><span class="sic">🔎</span>
         <input type="text" id="kxSearch" placeholder="Buscar por código o nombre…" value="${escHtml(InvState.searchKardex)}">
       </div>
-      <button class="btn primary" style="--accent:var(--personal)" onclick="exportKardexExcelAll()">⬇ Descargar Excel</button>
+      ${soloLectura ? '' : '<button class="btn primary" style="--accent:var(--personal)" onclick="exportKardexExcelAll()">⬇ Descargar Excel</button>'}
     </div>
     <div class="list-meta">${rows.length} ítem(s)</div>
     <div class="reg-list" id="kxList"></div>
@@ -2537,13 +2613,16 @@ function renderKardexTab(){
 
 async function openKardexHistory(codigo){
   const item = (cacheStock||[]).find(r=>r.codigo===codigo);
+  const soloLectura = !!(permisoActual() && permisoActual().soloKardex);
   openModal(`
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(item ? item.nombre : codigo)}</h3>
+    ${soloLectura ? '' : `
     <div style="display:flex;flex-direction:column;gap:8px;margin:10px 0 14px;">
       <button class="btn" onclick="exportKardexExcelItem('${escHtml(codigo)}')">⬇ Descargar Excel de este ítem</button>
       <button class="btn primary" style="--accent:var(--personal)" onclick="openAjusteModal('${escHtml(codigo)}')">⚙️ Ajuste</button>
     </div>
+    `}
     <div class="msub">Historial de movimientos (Kardex)</div>
     <div id="kxHist"><div class="empty-state">Cargando…</div></div>
   `);
@@ -3300,10 +3379,16 @@ async function planLoad(force){
     (async ()=>{
       // El cronograma de la fecha seleccionada, más el arrastre de órdenes de días
       // anteriores que quedaron sin finalizar (para que no se pierdan de vista).
-      const [hoyRes, arrastreRes] = await Promise.all([
-        sb.from('cronograma').select('*, cronograma_ingredientes(*), cronograma_personal(*)').eq('fecha', planFechaActual).order('created_at'),
-        sb.from('cronograma').select('*, cronograma_ingredientes(*), cronograma_personal(*)').eq('finalizado', false).lt('fecha', planFechaActual)
-      ]);
+      // Si el área actual tiene un área de Planificación restringida (ej. Masa,
+      // Acondicionamiento 1/2/3), solo se traen las órdenes de esa área.
+      const permiso = permisoActual();
+      let hoyQuery = sb.from('cronograma').select('*, cronograma_ingredientes(*), cronograma_personal(*)').eq('fecha', planFechaActual).order('created_at');
+      let arrastreQuery = sb.from('cronograma').select('*, cronograma_ingredientes(*), cronograma_personal(*)').eq('finalizado', false).lt('fecha', planFechaActual);
+      if(permiso && permiso.planArea){
+        hoyQuery = hoyQuery.eq('area', permiso.planArea);
+        arrastreQuery = arrastreQuery.eq('area', permiso.planArea);
+      }
+      const [hoyRes, arrastreRes] = await Promise.all([hoyQuery, arrastreQuery]);
       const hoy = hoyRes.data || [];
       const arrastre = (arrastreRes.data || []).map(r=>({ ...r, _arrastrado:true }));
       cacheCronograma = arrastre.concat(hoy);
@@ -3418,14 +3503,16 @@ function crSearchProducts(q){
 function crPickProduct(codigo){
   document.getElementById('crSearchResults').innerHTML = '';
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
+  const permiso = permisoActual();
   const areaActual = sessionStorage.getItem('propizzec_area') || '';
-  const areaDefault = PRODUCCION_AREAS.includes(areaActual) ? areaActual : PRODUCCION_AREAS[0];
+  const areaDefault = (permiso && permiso.planArea) ? permiso.planArea : (PRODUCCION_AREAS.includes(areaActual) ? areaActual : PRODUCCION_AREAS[0]);
+  const areaBloqueada = !!(permiso && permiso.planArea);
   openModal(`
     <h3>${escHtml(item.nombre)}</h3>
     <div class="msub">${escHtml(codigo)} · agregar al cronograma del ${ddMMyy(planFechaActual)}</div>
     <div class="field">
       <label>Área designada</label>
-      <select id="crAreaDesignada">
+      <select id="crAreaDesignada" ${areaBloqueada?'disabled':''}>
         ${PRODUCCION_AREAS.map(a=>`<option value="${escHtml(a)}" ${a===areaDefault?'selected':''}>${escHtml(a)}</option>`).join('')}
       </select>
     </div>
@@ -3439,6 +3526,27 @@ function crPickProduct(codigo){
     </div>
   `);
 }
+// Discos de pizza: se usan durante todo el día apenas se crea la orden, así
+// que se ingresan al Kardex de inmediato con la cantidad teórica (programada),
+// y se corrigen solas a la cantidad real cuando Monitoreo aprueba la orden —
+// porque usan el mismo comprobante ('PRODUCCION N° <orden>'), kardexEscribirProduccion
+// reemplaza esa misma entrada en vez de duplicarla.
+const DISCOS_NOMBRES = [
+  'DISCO DE PIZZA MEDIANO 19.5',
+  'DISCO DE PIZZA GRANDE 30.0',
+  'DISCO PIZZA PEQUEÑO 16.5'
+].map(normalizaNombre);
+async function kardexEscribirDiscoTeorico(row){
+  const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
+  if(!item || !nombreEnLista(item, DISCOS_NOMBRES)) return;
+  if(!(row.cantidad_programada>0)) return;
+  const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
+  const loteProducto = (item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
+  await sb.from('kardex_movimientos').insert({
+    item_codigo: row.item_codigo, fecha: row.fecha, lote: loteProducto,
+    comprobante, entra: row.cantidad_programada, sale: 0
+  });
+}
 async function crConfirmAdd(codigo){
   const cant = parseFloat((document.getElementById('crCantProg').value||'0').replace(',','.')) || 0;
   const areaSel = document.getElementById('crAreaDesignada');
@@ -3449,11 +3557,17 @@ async function crConfirmAdd(codigo){
     orden_produccion: op, estado:'pendiente', lote: ddMMyy(planFechaActual)
   }).select().single();
   if(error){ toast('Error: ' + error.message); return; }
-  const ingredientes = (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===codigo);
+  const ingredientes = (cacheFormulacion||[]).filter(f=>{
+    if(f.cod_producto_principal!==codigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return esIngredienteDeCronograma(compItem); // Materia Prima + los ME que no requieren etiquetado
+  });
   if(ingredientes.length){
     const rows = ingredientes.map(f=>({ cronograma_id: data.id, item_codigo: f.cod_componente }));
     await sb.from('cronograma_ingredientes').insert(rows);
   }
+  await kardexEscribirDiscoTeorico(data);
+  await invLoad(true);
   closeModal();
   await planLoad(true);
   toast('Orden ' + op + ' agregada');
@@ -4118,7 +4232,7 @@ function crIngSearchInput(cronogramaId, q){
   if(!q){ results.innerHTML=''; return; }
   const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
   const already = new Set((row&&row.cronograma_ingredientes||[]).map(ci=>ci.item_codigo));
-  const matches = (cacheItems||[]).filter(i=>i.activo && !already.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
+  const matches = (cacheItems||[]).filter(i=>i.activo && esIngredienteDeCronograma(i) && !already.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
   results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="crIngAdd('${cronogramaId}','${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
 async function crIngAdd(cronogramaId, codigo){
@@ -4303,7 +4417,7 @@ function toggleLote(lote, disponible, checked){
   if(checked){
     const yaAsignado = Object.values(loteConsumo.seleccion).reduce((s,v)=>s+v,0);
     const falta = Math.max(0, loteConsumo.total - yaAsignado);
-    loteConsumo.seleccion[lote] = Math.min(disponible, falta || disponible);
+    loteConsumo.seleccion[lote] = Math.min(disponible, falta);
   } else {
     delete loteConsumo.seleccion[lote];
   }
@@ -4372,6 +4486,11 @@ async function kardexRevertirProduccion(row){
   const comprobanteRechazo = 'RECHAZO PRODUCCION N°' + (row.orden_produccion||row.id);
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteRechazo);
+  // Para discos, no se debe dejar el Kardex en cero: ya se venían usando desde
+  // que se creó la orden, así que se restaura la entrada teórica en vez de
+  // borrarla del todo (si el llamador no trae los datos completos del
+  // cronograma, kardexEscribirDiscoTeorico simplemente no hace nada).
+  await kardexEscribirDiscoTeorico(row);
 }
 async function guardarProduccion(cronogramaId){
   const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
@@ -4595,6 +4714,7 @@ function paradasRegRenderList(){
 let EtiqState = { tab:'actividad', fecha: todayISO(), selId:null, q:'', desde:'', hasta:'' };
 let cacheEtiqCronograma = null;
 let cacheEtiqRegistros = null;
+let cacheEtiqConEtiquetado = new Set(); // ids de cronograma que YA tienen al menos un registro de etiquetado
 
 async function renderEtiquetado(){
   const app = document.getElementById('app');
@@ -4620,7 +4740,27 @@ async function etiqLoad(force){
   if(force || !cacheItems) tasks.push(invLoad(true));
   if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=r.data||[]));
   if(force || !cacheCatalogosPlan) tasks.push(sb.from('catalogos').select('*').eq('activo',true).then(r=>cacheCatalogosPlan=r.data||[]));
-  tasks.push(sb.from('cronograma').select('*, cronograma_ingredientes(*)').eq('fecha', EtiqState.fecha).order('created_at').then(r=>cacheEtiqCronograma=r.data||[]));
+  tasks.push(
+    (async ()=>{
+      // Etiquetado funciona independiente de si Planificación ya marcó la orden
+      // como finalizada: se muestran las órdenes de la fecha elegida, MÁS las de
+      // días anteriores (hasta 14 días atrás) que todavía no tengan ningún
+      // material de empaque registrado — sin importar si ya se finalizaron o no.
+      const hace14 = new Date(); hace14.setDate(hace14.getDate()-14);
+      const hace14ISO = hace14.toISOString().slice(0,10);
+      const [hoyRes, arrastreRes, etiqRes] = await Promise.all([
+        sb.from('cronograma').select('*, cronograma_ingredientes(*)').eq('fecha', EtiqState.fecha).order('created_at'),
+        sb.from('cronograma').select('*, cronograma_ingredientes(*)').lt('fecha', EtiqState.fecha).gte('fecha', hace14ISO),
+        sb.from('etiquetado_registros').select('cronograma_id').gte('fecha', hace14ISO)
+      ]);
+      cacheEtiqConEtiquetado = new Set((etiqRes.data||[]).map(e=>e.cronograma_id));
+      const hoy = hoyRes.data || [];
+      const arrastre = (arrastreRes.data || [])
+        .filter(r=>!cacheEtiqConEtiquetado.has(r.id))
+        .map(r=>({ ...r, _atrasado:true }));
+      cacheEtiqCronograma = arrastre.concat(hoy);
+    })()
+  );
   await Promise.all(tasks);
 }
 async function etiqCambiarFecha(fecha){
@@ -4655,22 +4795,35 @@ function renderEtiqActividadTab(){
   input.addEventListener('input', e=>{ EtiqState.qLista = e.target.value; etiqRenderOrdenList(); });
   etiqRenderOrdenList();
 }
+function productoTieneFundas(itemCodigo){
+  return (cacheFormulacion||[]).some(f=>{
+    if(f.cod_producto_principal!==itemCodigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, ETIQ_FUNDAS_NOMBRES);
+  });
+}
 function etiqRenderOrdenList(){
   const list = document.getElementById('etiqOrdenList');
   if(!list) return;
   const q = (EtiqState.qLista||'').trim().toUpperCase();
-  let ordenes = (cacheEtiqCronograma||[]).filter(r=>!r.finalizado);
+  // Si el producto no tiene ninguna funda en su fórmula, no hay nada que registrar
+  // aquí — no tiene sentido que aparezca en esta lista.
+  let ordenes = (cacheEtiqCronograma||[]).filter(r=>productoTieneFundas(r.item_codigo));
   if(q){
     ordenes = ordenes.filter(r=>{
       const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
       return (r.item_codigo||'').toUpperCase().includes(q) || (r.orden_produccion||'').toUpperCase().includes(q) || (item && item.nombre.toUpperCase().includes(q));
     });
   }
-  if(!ordenes.length){ list.innerHTML = '<div class="empty-state">Sin órdenes pendientes en Cronograma para esta fecha.</div>'; return; }
+  ordenes = ordenes.slice().sort((a,b)=>(a._atrasado?0:1)-(b._atrasado?0:1));
+  if(!ordenes.length){ list.innerHTML = '<div class="empty-state">Sin órdenes para esta fecha.</div>'; return; }
   list.innerHTML = ordenes.map(r=>{
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
-    return `<div class="reg-row" onclick="etiqAbrirModal('${r.id}')">
-      <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion||'')} · Lote ${escHtml(r.lote||ddMMyy(r.fecha))}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)}</span></div>
+    const yaEtiquetado = cacheEtiqConEtiquetado && cacheEtiqConEtiquetado.has(r.id);
+    const pendienteTag = !yaEtiquetado ? ' <b style="color:var(--danger);">Pendiente</b>' : '';
+    const atrasadoTag = r._atrasado ? ` <span class="sub" style="color:var(--danger);">(${ddMMyy(r.fecha)})</span>` : '';
+    return `<div class="reg-row" ${(!yaEtiquetado && r._atrasado)?'style="border:1px solid var(--danger);background:rgba(220,38,38,.05);"':''} onclick="etiqAbrirModal('${r.id}')">
+      <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion||'')} · Lote ${escHtml(r.lote||ddMMyy(r.fecha))}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)}${pendienteTag}${atrasadoTag}</span></div>
       <div class="rval"><span class="sup">CANTIDAD</span><span class="big">${fmtNum(r.cantidad_real!=null?r.cantidad_real:r.cantidad_programada)}</span></div>
     </div>`;
   }).join('');
@@ -4681,20 +4834,14 @@ async function etiqAbrirModal(cronogramaId){
   if(!row) return;
   const componentesME = (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===row.item_codigo).map(f=>{
     const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    return (compItem && compItem.tipo==='MATERIAL_EMPAQUE') ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
+    return (compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, ETIQ_FUNDAS_NOMBRES)) ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
   }).filter(Boolean);
   if(!componentesME.length){ toast('Este producto no tiene material de empaque definido en su fórmula (Formulación → Ítems)'); return; }
-  toast('Cargando lotes disponibles…');
-  const lotesPorItem = {};
-  await Promise.all(componentesME.map(async c=>{
-    const { data } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
-    lotesPorItem[c.item_codigo] = data||[];
-  }));
   EtiqModalState = {
     cronogramaId,
     rows: componentesME.map(c=>{
       const teorica = pfCantidadTeorica(row, c.item_codigo);
-      return { ...c, teorica, cantidad: teorica, lote:'', lotes: lotesPorItem[c.item_codigo]||[] };
+      return { ...c, teorica, cantidad: null, lotes_consumidos: [] };
     })
   };
   etiqRenderModal();
@@ -4704,31 +4851,32 @@ function etiqRenderModal(){
   if(!row) return;
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
+  const loteVal = EtiqModalState.loteProducto!=null ? EtiqModalState.loteProducto : (row.lote || ddMMyy(row.fecha));
   openModal(`
-    <h3>${escHtml(item?item.nombre:row.item_codigo)}</h3>
-    <div class="msub">${escHtml(row.orden_produccion||'')} · ${escHtml(row.item_codigo)}</div>
-    <div class="field"><label>Lote del producto</label>
-      <input type="text" id="etiqModalLote" value="${escHtml(EtiqModalState.loteProducto!=null?EtiqModalState.loteProducto:(row.lote||ddMMyy(row.fecha)))}">
+    <div class="op-head">
+      <div class="field">
+        <label>Lote del producto</label>
+        <input type="text" id="etiqModalLote" value="${escHtml(loteVal)}">
+      </div>
+      <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
     </div>
-    <div class="sub" style="margin-top:-8px;margin-bottom:14px;">Si lo cambias, se actualiza de inmediato en Planificación/Cronograma.</div>
+    <div class="sub" style="margin-top:-6px;margin-bottom:12px;">Si cambias el lote, se actualiza de inmediato en Planificación/Cronograma.</div>
+    <div class="pf-row">
+      <div class="field">
+        <label>${escHtml(row.item_codigo)} — Producto</label>
+        <input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled>
+      </div>
+    </div>
 
-    <div class="sel-section-title">Material de empaque</div>
-    ${EtiqModalState.rows.map((r,idx)=>`
-      <div class="ci-row" style="margin-bottom:4px;">
-        <div class="ci-name"><span class="sup">${escHtml(r.item_codigo)}</span><span class="nm">${escHtml(r.item_nombre)}</span></div>
-      </div>
-      <div class="field-row">
-        <div class="field"><label>Cantidad teórica (${escHtml(r.medida)})</label><input type="text" value="${r.teorica!=null?fmtRaw(r.teorica):'—'}" disabled></div>
-        <div class="field"><label>Cantidad usada</label><input type="text" inputmode="decimal" id="etiqCant_${idx}" value="${r.cantidad!=null?fmtRaw(r.cantidad):''}" onchange="etiqSetCantidad(${idx}, this.value)"></div>
-      </div>
-      <div class="field"><label>Lote</label>
-        <select id="etiqLote_${idx}" onchange="etiqSetLote(${idx}, this.value)">
-          <option value="">Selecciona…</option>
-          ${r.lotes.map(l=>`<option value="${escHtml(l.lote)}" ${r.lote===l.lote?'selected':''}>${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)}</option>`).join('')}
-        </select>
-      </div>
-      <hr style="border:none;border-top:1px solid var(--line);margin:14px 0;">
-    `).join('')}
+    <div class="field">
+      <label>Agregar otro material de empaque</label>
+      <input type="text" id="etiqMeSearchInput" placeholder="Buscar por código o nombre…" oninput="etiqBuscarMeExtra(this.value)">
+      <div class="search-results" id="etiqMeSearchResults"></div>
+    </div>
+    <div class="field">
+      <label>Material de Empaque (formulación)</label>
+      <div id="etiqMeList"></div>
+    </div>
 
     <div class="field"><label>Observaciones</label>
       <textarea id="etiqModalObs" rows="2" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">${escHtml(EtiqModalState.observaciones||'')}</textarea>
@@ -4744,13 +4892,147 @@ function etiqRenderModal(){
       <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarModal()">Guardar</button>
     </div>
   `);
+  etiqRenderMeListInner();
 }
-function etiqSetCantidad(idx, val){
-  const v = parseFloat((val||'').replace(',','.'));
-  EtiqModalState.rows[idx].cantidad = isNaN(v) ? null : v;
+function etiqRenderMeListInner(){
+  const wrap = document.getElementById('etiqMeList');
+  if(!wrap) return;
+  if(!EtiqModalState.rows.length){ wrap.innerHTML = '<div class="empty-state">Sin material de empaque agregado.</div>'; return; }
+  wrap.innerHTML = EtiqModalState.rows.map((r,idx)=>{
+    const lotesN = (r.lotes_consumidos||[]).length;
+    let valorHtml, accionHtml;
+    if(r.cantidad!=null){
+      valorHtml = `<div class="ci-val"><span class="cant">${fmtRaw(r.cantidad)}</span><span class="med">${escHtml(r.medida)}</span></div>`;
+      accionHtml = `<div class="ci-lote"><button class="${lotesN?'set':''}" onclick="etiqAbrirLotePicker(${idx})">${lotesN?('Lote: '+(r.lotes_consumidos.map(l=>l.lote).join(', '))):'Elegir lote'}</button></div>`;
+    } else {
+      valorHtml = r.teorica!=null
+        ? `<div class="ci-val"><span class="cant" style="color:var(--muted);">${fmtNum(r.teorica)}</span><span class="med" style="color:var(--muted);">${escHtml(r.medida)} teórico</span></div>`
+        : `<div class="ci-val"></div>`;
+      accionHtml = `<div class="ci-lote"><button onclick="etiqAbrirCantidadModal(${idx})">Cantidad usada</button></div>`;
+    }
+    return `<div class="ci-row">
+      <div class="ci-name"><span class="sup">${escHtml(r.item_codigo)}</span><span class="nm">${escHtml(r.item_nombre)}</span></div>
+      ${valorHtml}
+      ${accionHtml}
+      <button class="ing-rm" title="Eliminar" onclick="etiqQuitarRow(${idx})">✕</button>
+    </div>`;
+  }).join('');
 }
-function etiqSetLote(idx, val){
-  EtiqModalState.rows[idx].lote = val;
+function etiqAbrirCantidadModal(idx){
+  const r = EtiqModalState.rows[idx];
+  if(!r) return;
+  openModal(`
+    <h3>${escHtml(r.item_nombre)}</h3>
+    <div class="msub">${escHtml(r.item_codigo)}${r.teorica!=null?(' · teórica '+fmtNum(r.teorica)+' '+escHtml(r.medida)):''}</div>
+    <div class="field"><label>Cantidad usada (${escHtml(r.medida)})</label>
+      <input type="text" inputmode="decimal" id="etiqCantModalInput" value="${r.teorica!=null?fmtRaw(r.teorica):''}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqConfirmarCantidad(${idx})">Confirmar</button>
+    </div>
+  `);
+  setTimeout(()=>{ const el = document.getElementById('etiqCantModalInput'); if(el) el.focus(); }, 60);
+}
+function etiqConfirmarCantidad(idx){
+  const r = EtiqModalState.rows[idx];
+  if(!r) return;
+  const v = parseFloat((document.getElementById('etiqCantModalInput').value||'').replace(',','.'));
+  if(!v || v<=0){ toast('Ingresa la cantidad usada'); return; }
+  r.cantidad = v;
+  r.lotes_consumidos = [];
+  closeModal();
+  etiqRenderMeListInner();
+}
+function etiqBuscarMeExtra(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('etiqMeSearchResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; return; }
+  const yaAgregados = new Set(EtiqModalState.rows.map(r=>r.item_codigo));
+  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(i, ETIQ_FUNDAS_NOMBRES) && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="etiqAgregarMeExtra('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+function etiqAgregarMeExtra(codigo){
+  const item = (cacheItems||[]).find(i=>i.codigo===codigo);
+  EtiqModalState.rows.push({ item_codigo:codigo, item_nombre:item?item.nombre:codigo, medida:item?item.medida:'', teorica:null, cantidad:null, lotes_consumidos:[] });
+  const s = document.getElementById('etiqMeSearchInput'); if(s) s.value='';
+  const r = document.getElementById('etiqMeSearchResults'); if(r) r.innerHTML='';
+  etiqRenderMeListInner();
+}
+function etiqQuitarRow(idx){
+  EtiqModalState.rows.splice(idx,1);
+  etiqRenderMeListInner();
+}
+/* ---------------- Selector de lotes (varios, hasta completar la cantidad) — igual que en Cronograma ---------------- */
+let etiqLoteConsumo = { total:0, seleccion:{}, disponibles:[], rowIdx:null };
+async function etiqAbrirLotePicker(idx){
+  const r = EtiqModalState.rows[idx];
+  if(!r) return;
+  const cantidad = r.cantidad;
+  if(!cantidad || cantidad<=0){ toast('Primero ingresa la cantidad a utilizar'); return; }
+  openModal(`
+    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(r.item_codigo)}</span>
+    <h3 style="margin-top:2px;">${escHtml(r.item_nombre)}</h3>
+    <div class="msub">Selecciona el o los lotes a consumir</div>
+    <div id="etiqLoteList"><div class="empty-state">Cargando…</div></div>
+    <div class="lote-remain" id="etiqLoteRemain"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqConfirmarLotes(${idx})">Confirmar</button>
+    </div>
+  `);
+  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', r.item_codigo).order('fecha_ingreso');
+  const listEl = document.getElementById('etiqLoteList');
+  if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const previamente = new Set((r.lotes_consumidos||[]).map(l=>l.lote));
+  etiqLoteConsumo = { total: Number(cantidad), seleccion:{}, disponibles: data||[], rowIdx: idx };
+  (r.lotes_consumidos||[]).forEach(l=>{ etiqLoteConsumo.seleccion[l.lote] = l.cantidad; });
+  if(!data || !data.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles registrados en Kardex</div>'; }
+  else{
+    listEl.innerHTML = data.map(l=>`
+      <div class="lote-row">
+        <input type="checkbox" ${previamente.has(l.lote)?'checked':''} onchange="etiqToggleLote('${escHtml(l.lote)}', ${l.cantidad_disponible}, this.checked)">
+        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>Ingreso ${l.fecha_ingreso?l.fecha_ingreso.split('-').reverse().join('/'):'—'}${l.fecha_caducidad?(' · Caduca '+l.fecha_caducidad.split('-').reverse().join('/')):''}</span></div>
+        <div class="lq">${fmtNum(l.cantidad_disponible)} ${escHtml(r.medida)}</div>
+      </div>
+    `).join('');
+  }
+  etiqLoteRecalc();
+}
+function etiqToggleLote(lote, disponible, checked){
+  if(checked){
+    const yaAsignado = Object.values(etiqLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+    const falta = Math.max(0, etiqLoteConsumo.total - yaAsignado);
+    etiqLoteConsumo.seleccion[lote] = Math.min(disponible, falta);
+  } else {
+    delete etiqLoteConsumo.seleccion[lote];
+  }
+  etiqLoteRecalc();
+}
+function etiqLoteRecalc(){
+  const asignado = Object.values(etiqLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+  const falta = Math.round((etiqLoteConsumo.total - asignado)*10000)/10000;
+  const remainEl = document.getElementById('etiqLoteRemain');
+  if(remainEl){
+    remainEl.className = 'lote-remain ' + (falta<=0.001 ? 'ok' : 'warn');
+    remainEl.innerHTML = `<span>A consumir: ${fmtNum(etiqLoteConsumo.total)}</span><span>${falta>0.001 ? ('Falta '+fmtNum(falta)) : 'Completo'}</span>`;
+  }
+}
+function etiqConfirmarLotes(idx){
+  const r = EtiqModalState.rows[idx];
+  if(!r) return;
+  const seleccionados = Object.entries(etiqLoteConsumo.seleccion).filter(([,v])=>v>0).map(([lote,cantidad])=>({lote, cantidad}));
+  if(!seleccionados.length){ toast('Selecciona al menos un lote'); return; }
+  const asignado = seleccionados.reduce((s,l)=>s+l.cantidad,0);
+  const falta = Math.round((etiqLoteConsumo.total - asignado)*10000)/10000;
+  if(falta > 0.001){
+    toast('Los lotes elegidos no completan la cantidad a consumir. Falta ' + fmtNum(falta) + '. Elige otro lote o ajusta la cantidad.');
+    return;
+  }
+  r.lotes_consumidos = seleccionados;
+  closeModal();
+  etiqRenderMeListInner();
 }
 async function etiqGuardarModal(){
   const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId);
@@ -4761,7 +5043,7 @@ async function etiqGuardarModal(){
   const responsable = document.getElementById('etiqModalResp').value;
   const rowsAUsar = EtiqModalState.rows.filter(r=>r.cantidad!=null && r.cantidad>0);
   if(!rowsAUsar.length){ toast('Ingresa la cantidad usada de al menos un material de empaque'); return; }
-  const sinLote = rowsAUsar.filter(r=>!r.lote);
+  const sinLote = rowsAUsar.filter(r=>!(r.lotes_consumidos||[]).length);
   if(sinLote.length){ toast('Falta elegir el lote de: ' + sinLote.map(r=>r.item_codigo).join(', ')); return; }
 
   if(lote !== row.lote){
@@ -4771,21 +5053,24 @@ async function etiqGuardarModal(){
   }
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   for(const r of rowsAUsar){
-    const payload = {
-      cronograma_id: row.id, fecha: row.fecha, orden_produccion: row.orden_produccion,
-      item_codigo: row.item_codigo, item_nombre: item?item.nombre:row.item_codigo, lote_producto: lote,
-      item_me_codigo: r.item_codigo, item_me_nombre: r.item_nombre, cantidad: r.cantidad, lote_me: r.lote,
-      observaciones, responsable
-    };
-    const { data, error } = await sb.from('etiquetado_registros').insert(payload).select().single();
-    if(error){ toast('Error al guardar ' + r.item_codigo + ': ' + error.message); continue; }
-    const comprobante = 'ETIQUETADO-' + data.id;
-    const { error: errK } = await sb.from('kardex_movimientos').insert({
-      item_codigo: r.item_codigo, fecha: row.fecha, lote: r.lote, comprobante, entra:0, sale: r.cantidad
-    });
-    if(errK){ toast('Se guardó ' + r.item_codigo + ', pero hubo un error al descontar del Kardex: ' + errK.message); }
+    for(const lc of r.lotes_consumidos){
+      const payload = {
+        cronograma_id: row.id, fecha: row.fecha, orden_produccion: row.orden_produccion,
+        item_codigo: row.item_codigo, item_nombre: item?item.nombre:row.item_codigo, lote_producto: lote,
+        item_me_codigo: r.item_codigo, item_me_nombre: r.item_nombre, cantidad: lc.cantidad, lote_me: lc.lote,
+        observaciones, responsable
+      };
+      const { data, error } = await sb.from('etiquetado_registros').insert(payload).select().single();
+      if(error){ toast('Error al guardar ' + r.item_codigo + ': ' + error.message); continue; }
+      const comprobante = 'ETIQUETADO-' + data.id;
+      const { error: errK } = await sb.from('kardex_movimientos').insert({
+        item_codigo: r.item_codigo, fecha: row.fecha, lote: lc.lote, comprobante, entra:0, sale: lc.cantidad
+      });
+      if(errK){ toast('Se guardó ' + r.item_codigo + ', pero hubo un error al descontar del Kardex: ' + errK.message); }
+    }
   }
   await invLoad(true);
+  cacheEtiqConEtiquetado.add(row.id); // ya no queda "Pendiente" en la lista
   toast('Etiquetado registrado y descontado del Kardex');
   closeModal();
   etiqRenderOrdenList();
@@ -4969,7 +5254,7 @@ function monEnsureRegistro(id){
       presentacion: item ? (fmtRaw(item.presentacion_cantidad)+' '+(item.presentacion_medida||'')) : null,
       lote: cr ? cr.lote : null, orden_produccion: cr ? cr.orden_produccion : null,
       operarios:null, hora_inicio: cr ? cr.hora_inicio : null, hora_fin: cr ? cr.hora_fin : null, horas_extra:0,
-      unid_planificadas: cr ? cr.cantidad_programada : null, unid_producidas: cr ? cr.cantidad_real : null,
+      unid_planificadas: cr ? cr.cantidad_programada : null, unid_producidas: cr ? (cr.cantidad_real!=null ? cr.cantidad_real : cr.cantidad_programada) : null,
       unid_buen_estado:null,
       unid_no_conformes: cr ? (cr.unid_rechazadas_calidad||0) : 0, unid_reprocesadas: cr ? (cr.unid_reprocesadas||0) : 0,
       num_paradas:0, tiempo_paradas:0, motivo_parada:null,
@@ -5037,51 +5322,61 @@ function monCalc(reg){
   return c;
 }
 
-function monProductoSelector(){
-  const productos = (cacheCronograma||[]).filter(r=>{
-    if(!r.finalizado) return false; // solo aparecen las órdenes ya finalizadas en Cronograma
-    const reg = (cacheRegistro||[]).find(x=>x.cronograma_id===r.id);
-    return !(reg && reg.locked); // los cerrados no aparecen aquí; se corrigen desde la pestaña Registros
-  }).map(r=>{
+function monRenderListaRows(rows){
+  if(!rows.length) return '<div class="empty-state">Sin órdenes pendientes por verificar.</div>';
+  return rows.map(r=>{
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
-    return { id:r.id, label:(r.orden_produccion||'—')+' · '+r.item_codigo+' — '+(item?item.nombre:r.item_codigo) };
-  });
-  const options = productos.map(p=>`<option value="${p.id}" ${MonState.selId===p.id?'selected':''}>${escHtml(p.label)}</option>`).join('');
-  const esHoy = planFechaActual === todayISO();
-  const backlog = cacheOrdenesPendientesBacklog || [];
-  const backlogHtml = backlog.length ? `
-    <div class="field">
-      <label style="color:var(--danger);">⚠ Pendientes de días anteriores (${backlog.length})</label>
-      <select onchange="monSelectProductoBacklog(this.value)">
-        <option value="">Selecciona una orden atrasada…</option>
-        ${backlog.map(r=>{
-          const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
-          const tag = r.estado_verificacion==='revisar' ? ' — REVISAR' : '';
-          return `<option value="${r.id}" ${MonState.selId===r.id?'selected':''}>${ddMMyy(r.fecha)} · ${r.orden_produccion||'—'} · ${r.item_codigo} — ${item?item.nombre:r.item_codigo}${tag}</option>`;
-        }).join('')}
-      </select>
-    </div>` : '';
-  return `<div class="field" style="max-width:220px;">
-    <label>Fecha a verificar</label>
-    <input type="date" value="${escHtml(planFechaActual)}" onchange="monCambiarFecha(this.value)">
-  </div>
-  ${esHoy ? '' : '<div class="sub" style="margin-top:-8px;margin-bottom:10px;color:var(--paradas);font-weight:600;">Estás viendo/verificando una fecha distinta a hoy.</div>'}
-  ${backlogHtml}
-  <div class="field">
-    <label>Orden / producto (cronograma del ${ddMMyy(planFechaActual)})</label>
-    <select id="monProductoSel" onchange="monSelectProducto(this.value)">
-      <option value="">Selecciona una orden…</option>${options}
-    </select>
-    <div class="sub" style="margin-top:4px;">Solo se listan las órdenes ya finalizadas en Cronograma. Las cerradas no aparecen aquí; para corregirlas, ve a la pestaña <b>Registros</b>.</div>
-  </div>`;
+    return `<div class="reg-row" onclick="monAbrirProducto('${r.id}')">
+      <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · ${escHtml(r.orden_produccion||'')}${r._atrasado?(' · '+ddMMyy(r.fecha)):''}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)} <b style="color:var(--danger);">Pendiente</b></span></div>
+      <div class="rval"><span class="sup">CANTIDAD</span><span class="big">${fmtNum(r.cantidad_real!=null?r.cantidad_real:r.cantidad_programada)}</span></div>
+    </div>`;
+  }).join('');
 }
-function monSelectProductoBacklog(id){
-  if(!id) return;
+function monListaFiltrada(){
+  const productos = (cacheCronograma||[]).filter(r=>{
+    if(!r.finalizado) return false;
+    const reg = (cacheRegistro||[]).find(x=>x.cronograma_id===r.id);
+    return !(reg && reg.locked);
+  });
+  const backlog = (cacheOrdenesPendientesBacklog||[]).map(r=>({...r,_atrasado:true}));
+  let todas = backlog.concat(productos);
+  const q = (MonState.qLista||'').trim().toUpperCase();
+  if(q){
+    todas = todas.filter(r=>{
+      const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+      return (r.item_codigo||'').toUpperCase().includes(q) || (r.orden_produccion||'').toUpperCase().includes(q) || (item && item.nombre.toUpperCase().includes(q));
+    });
+  }
+  return todas;
+}
+function monRenderListaProductos(){
+  const esHoy = planFechaActual === todayISO();
+  return `
+    <div class="field" style="max-width:220px;">
+      <label>Fecha a verificar</label>
+      <input type="date" value="${escHtml(planFechaActual)}" onchange="monCambiarFecha(this.value)">
+    </div>
+    ${esHoy ? '' : '<div class="sub" style="margin-top:-8px;margin-bottom:10px;color:var(--paradas);font-weight:600;">Estás viendo una fecha distinta a hoy.</div>'}
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="monListSearch" placeholder="Buscar producto por código o nombre…" value="${escHtml(MonState.qLista||'')}">
+      </div>
+    </div>
+    <div class="list-meta">Órdenes por verificar</div>
+    <div class="reg-list" id="monOrdenList">${monRenderListaRows(monListaFiltrada())}</div>
+  `;
+}
+function monVolverBtnHtml(){
+  return `<button class="btn ghost" type="button" style="margin-bottom:14px;" onclick="monVolverALista()">← Volver al listado</button>`;
+}
+function monVolverALista(){
+  MonState.selId = null;
+  monRenderBody();
+}
+async function monAbrirProducto(id){
   const row = (cacheOrdenesPendientesBacklog||[]).find(r=>r.id===id);
-  if(!row) return;
-  if(!cacheCronograma) cacheCronograma = [];
-  cacheCronograma = cacheCronograma.filter(c=>c.id!==id).concat([row]);
-  monSelectProducto(id);
+  if(row){ if(!cacheCronograma) cacheCronograma=[]; cacheCronograma = cacheCronograma.filter(c=>c.id!==id).concat([row]); }
+  await monSelectProducto(id);
 }
 async function monSelectProducto(id){
   MonState.selId = id || null;
@@ -5093,7 +5388,12 @@ async function renderMonProduccion(){
   const body = document.getElementById('monBody');
   const id = MonState.selId;
   if(!id){
-    body.innerHTML = monProductoSelector() + '<div class="empty-state">Selecciona una orden para verificar su producción</div>';
+    body.innerHTML = monRenderListaProductos();
+    const input = document.getElementById('monListSearch');
+    if(input) input.addEventListener('input', e=>{
+      MonState.qLista = e.target.value;
+      document.getElementById('monOrdenList').innerHTML = monRenderListaRows(monListaFiltrada());
+    });
     return;
   }
   const cr = monGetCronograma(id);
@@ -5102,7 +5402,7 @@ async function renderMonProduccion(){
     // navegó a otra sección y cambió el contexto). Se limpia la selección para no
     // dejar la pantalla congelada en "Cargando…".
     MonState.selId = null;
-    body.innerHTML = monProductoSelector() + '<div class="empty-state">Selecciona una orden para verificar su producción</div>';
+    body.innerHTML = monRenderListaProductos();
     return;
   }
   const reg = monEnsureRegistro(id);
@@ -5122,7 +5422,7 @@ async function renderMonProduccion(){
   const personalActivo = ((cr && cr.cronograma_personal) || []).filter(p=>!p.hora_salida).length;
   reg.operarios = personalActivo;
 
-  body.innerHTML = monProductoSelector() + `
+  body.innerHTML = monVolverBtnHtml() + `
     <div class="readonly-box" style="margin-bottom:14px;">
       <b>${escHtml(cr.orden_produccion||'')}</b> · ${escHtml(cr.item_codigo)} — ${escHtml((cacheItems||[]).find(i=>i.codigo===cr.item_codigo)?.nombre||'')}
       · Lote <b>${escHtml(cr.lote||'')}</b> · Área ${escHtml(cr.area||'')}
@@ -6316,16 +6616,17 @@ function cfgUsuariosCard(){
   const rows = cacheUsuariosArea || [];
   return `<div class="card" style="--accent:var(--datos)">
     <h2>Usuarios por área</h2>
-    <div class="sub">Las áreas ya están definidas desde el inicio; aquí solo se corrige la clave de acceso de cada una o se activa/desactiva.</div>
+    <div class="sub">Las áreas ya están definidas desde el inicio; aquí solo se corrige la clave de acceso de cada una, se activa/desactiva, o se elimina.</div>
     <div class="catalog-mini">
       ${rows.length ? rows.map(u=>`
         <div class="cfg-row" style="display:flex;align-items:center;gap:8px;">
           <span style="flex:1;"><b>${escHtml(u.area)}</b> ${u.activo?'':'<span class="sub">(inactivo)</span>'}</span>
           <input type="text" value="${escHtml(u.clave)}" style="width:110px;padding:6px 8px;border:1px solid var(--line);border-radius:6px;" onchange="cfgSetClaveUsuario('${u.id}', this.value)">
           <button onclick="cfgToggleUsuario('${u.id}', ${!u.activo})">${u.activo?'Desactivar':'Activar'}</button>
+          <button onclick="cfgEliminarUsuarioArea('${u.id}','${escHtml(u.area)}')" style="color:var(--danger);">Eliminar</button>
         </div>`).join('') : '<div class="empty-state">Sin usuarios</div>'}
     </div>
-    <div class="msub" style="margin-top:14px;">¿Falta una área nueva? Agrégala aquí (caso poco común, ya que las áreas normales ya están definidas).</div>
+    <div class="msub" style="margin-top:14px;">¿Falta una área nueva? Agrégala aquí — aparecerá de inmediato como ícono en la pantalla de inicio de sesión.</div>
     <div class="field-row" style="margin-top:6px;">
       <input type="text" id="cfgUsrArea" placeholder="Área nueva (ej: EMPAQUE)" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
       <input type="text" id="cfgUsrClave" placeholder="Clave" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
@@ -6341,8 +6642,9 @@ async function cfgAddUsuario(){
   if(error){ toast('Error: '+error.message); return; }
   const { data } = await sb.from('usuarios_area').select('*').order('area');
   cacheUsuariosArea = data || [];
+  usuariosAreaCache = data || []; // mismo dato que usa la pantalla de inicio de sesión
   cfgRenderBody();
-  toast('Usuario agregado');
+  toast('Usuario agregado — ya aparece en la pantalla de inicio de sesión');
 }
 async function cfgSetClaveUsuario(id, clave){
   clave = clave.trim();
@@ -6351,6 +6653,8 @@ async function cfgSetClaveUsuario(id, clave){
   if(error){ toast('Error: '+error.message); cfgRenderBody(); return; }
   const u = (cacheUsuariosArea||[]).find(x=>x.id===id);
   if(u) u.clave = clave;
+  const u2 = (usuariosAreaCache||[]).find(x=>x.id===id);
+  if(u2) u2.clave = clave;
   toast('Clave actualizada');
 }
 async function cfgToggleUsuario(id, nuevoValor){
@@ -6358,7 +6662,17 @@ async function cfgToggleUsuario(id, nuevoValor){
   if(error){ toast('Error: '+error.message); return; }
   const { data } = await sb.from('usuarios_area').select('*').order('area');
   cacheUsuariosArea = data || [];
+  usuariosAreaCache = data || [];
   cfgRenderBody();
+}
+async function cfgEliminarUsuarioArea(id, area){
+  if(!confirm('¿Eliminar el área "' + area + '"? Desaparecerá de la pantalla de inicio de sesión.')) return;
+  const { error } = await sb.from('usuarios_area').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  cacheUsuariosArea = (cacheUsuariosArea||[]).filter(u=>u.id!==id);
+  usuariosAreaCache = (usuariosAreaCache||[]).filter(u=>u.id!==id);
+  cfgRenderBody();
+  toast('Área eliminada');
 }
 function cfgHorariosCard(){
   const areas = ['MASA','ACONDICIONAMIENTO 1','ACONDICIONAMIENTO 2','ACONDICIONAMIENTO 3','SELLADO','BODEGA'];
@@ -6394,30 +6708,48 @@ function cfgTiposMedidasCard(){
 async function cfgRenderBody(){
   await invLoad(false);
   const app = document.getElementById('app');
-  app.innerHTML = `
+  const permiso = permisoActual();
+  const esAdmin = !permiso; // PRODUCCION / CALIDAD: ven todo, sin restricción
+  const puede = (mod) => esAdmin || permiso.modulos.includes(mod);
+  let html = '';
+  if(puede('bodega') || puede('despacho')){
+    html += `
     <div class="card" style="--accent:var(--muted)">
       <h2>Leyenda de checklists (SI / NO / N/A)</h2>
       <div class="sub">Usada en Bodega (parámetros de calidad del transporte) y Despacho (liberación del producto, generalidades del vehículo, controles).</div>
       <div class="reg-row"><div class="rmain"><span class="big">SI</span></div><div class="rval"><span class="sub">Cumple</span></div></div>
       <div class="reg-row"><div class="rmain"><span class="big">NO</span></div><div class="rval"><span class="sub">No cumple</span></div></div>
       <div class="reg-row"><div class="rmain"><span class="big">N/A</span></div><div class="rval"><span class="sub">No aplica</span></div></div>
-    </div>
-    ${cfgTiposMedidasCard()}
-    ${cfgMetasSelladoCard()}
-    ${cfgPersonalCard()}
-    ${cfgSimpleCard('Motivos de Parada','motivo_parada','--paradas')}
-    ${cfgSimpleCard('Motivos de Merma','motivo_merma','--materia')}
-    ${cfgSimpleCard('Responsables — Calidad / PCC / OEE','responsable_calidad','--calidad')}
-    ${cfgSimpleCard('Responsables — Producción / Materia Prima','responsable_mp','--produccion')}
-    ${cfgSimpleCard('Responsables — Verificación (Monitoreo)','responsable_verificacion','--datos')}
-    ${cfgSimpleCard('Responsables — Despacho','responsable_despacho','--paradas')}
-    ${cfgTwoFieldCard({title:'Proveedores (Bodega)', colorVar:'--traza', table:'bodega_proveedores', rows:cacheBodProveedores||[], campo1:{key:'nombre',label:'Nombre',placeholder:'Nombre del proveedor'}, campo2:{key:'ruc',label:'RUC',placeholder:'RUC / Razón social'}})}
-    ${cfgTwoFieldCard({title:'Conductores (Bodega/Despacho)', colorVar:'--traza', table:'bodega_conductores', rows:cacheBodConductores||[], campo1:{key:'nombre',label:'Nombre',placeholder:'Nombre del conductor'}, campo2:{key:'cedula',label:'Cédula',placeholder:'Cédula'}})}
-    ${cfgSimpleCard('Placas de transporte','placa_transporte','--traza')}
-    ${cfgTwoFieldCard({title:'Destinos y clientes (Despacho)', colorVar:'--paradas', table:'despacho_destinos', rows:cacheDespDestinos||[], campo1:{key:'direccion',label:'Destino',placeholder:'Dirección de destino'}, campo2:{key:'cliente',label:'Cliente',placeholder:'Cliente asociado'}})}
-    ${cfgHorariosCard()}
-    ${cfgUsuariosCard()}
-  `;
+    </div>`;
+  }
+  html += cfgTiposMedidasCard(); // Inventario: siempre visible, todas las áreas lo tienen
+  if(puede('sellado')) html += cfgMetasSelladoCard();
+  if(puede('planificacion')){
+    html += cfgPersonalCard();
+    html += cfgSimpleCard('Motivos de Parada','motivo_parada','--paradas');
+    html += cfgSimpleCard('Motivos de Merma','motivo_merma','--materia');
+    html += cfgSimpleCard('Responsables — Producción / Materia Prima','responsable_mp','--produccion');
+  }
+  if(esAdmin){
+    html += cfgSimpleCard('Responsables — Calidad / PCC / OEE','responsable_calidad','--calidad');
+    html += cfgSimpleCard('Responsables — Verificación (Monitoreo)','responsable_verificacion','--datos');
+  }
+  if(puede('despacho')) html += cfgSimpleCard('Responsables — Despacho','responsable_despacho','--paradas');
+  if(puede('bodega')){
+    html += cfgTwoFieldCard({title:'Proveedores (Bodega)', colorVar:'--traza', table:'bodega_proveedores', rows:cacheBodProveedores||[], campo1:{key:'nombre',label:'Nombre',placeholder:'Nombre del proveedor'}, campo2:{key:'ruc',label:'RUC',placeholder:'RUC / Razón social'}});
+  }
+  if(puede('bodega') || puede('despacho')){
+    html += cfgTwoFieldCard({title:'Conductores (Bodega/Despacho)', colorVar:'--traza', table:'bodega_conductores', rows:cacheBodConductores||[], campo1:{key:'nombre',label:'Nombre',placeholder:'Nombre del conductor'}, campo2:{key:'cedula',label:'Cédula',placeholder:'Cédula'}});
+    html += cfgSimpleCard('Placas de transporte','placa_transporte','--traza');
+  }
+  if(puede('despacho')){
+    html += cfgTwoFieldCard({title:'Destinos y clientes (Despacho)', colorVar:'--paradas', table:'despacho_destinos', rows:cacheDespDestinos||[], campo1:{key:'direccion',label:'Destino',placeholder:'Dirección de destino'}, campo2:{key:'cliente',label:'Cliente',placeholder:'Cliente asociado'}});
+  }
+  if(esAdmin){
+    html += cfgHorariosCard();
+    html += cfgUsuariosCard();
+  }
+  app.innerHTML = html;
 }
 async function cfgAddCatalogo(tipo){
   const input = document.getElementById('cfg_new_'+tipo);
@@ -6471,17 +6803,61 @@ async function cfgSetHorario(area, value){
    ============================================================ */
 const PROPIZZEC_LOGO_B64 = 'data:image/png;base64,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';
 let SELLADO_ACTIVIDADES = [];
-// Productos que se pueden sellar: solo Producto Terminado (PT) y estas 5 cajas
-// de material de empaque específicas (armado de cajas).
+// Identificación de material de empaque por NOMBRE EXACTO del ítem (sin
+// columna aparte en la tabla items) — listas indicadas directamente.
+function normalizaNombre(s){
+  return (s||'').trim().toUpperCase().replace(/\s+/g,' '); // colapsa espacios dobles o raros para que coincida aunque haya diferencias de formato
+}
+function nombreEnLista(item, lista){
+  if(!item) return false;
+  const n = normalizaNombre(item.nombre);
+  return lista.includes(n);
+}
+// Fundas: aparecen en Etiquetado cuando están en la fórmula del producto.
+const ETIQ_FUNDAS_NOMBRES = [
+  'FUNDA STANP UP ZIPPER TRANSP 1000 ML',
+  'CONTRAETIQUETA PARA CHURROS',
+  'ETIQUETA PARA CHURROS',
+  'FUNDAS LASAÑA BOLOÑESA 300G',
+  'FUNDAS PIZZA CONGELADA DE CARNICERA BOPP MATE 33X35cm X50MICRAS',
+  'FUNDAS PIZZA CONGELADA DE JAMON Y QUESO BOPP MATE PP 33X35CM X50MICRAS',
+  'FUNDAS PIZZA CONGELADA DE PEPPERONI BOPP MATE 33X35cm X50MICRAS',
+  'FUNDAS PIZZA DE JAMON BOOP LA ORIGINAL TRANS 24X24CMX50MIC',
+  'FUNDAS PIZZA DE QUESO BOOP LA ORIGINAL TRANS 24X24CM50MIC',
+  'FUNDAS MINI PIZZA CONGELADA DE JAMON BOPP MATE PP 24X24CM X50 MICRAS',
+  'FND LAM PIZZA JAMN.QUESO FACUNDO',
+  'FUNDAS MINI PIZZA DE PEPPERONI REFR',
+  'FUNDAS MINI PIZZA CONGELADA DE PEPPERONI BOPP MATE PP 24X24CM X50 MICRAS',
+  'CAJAS PARA STICKS'
+].map(normalizaNombre);
+// Cajas: aparecen en Sellado (cartones/cajas usados) cuando están en la fórmula.
 const SEL_CAJAS_PERMITIDAS = [
-  'CAJA KRAFT GRANDE','CAJAS KRAFT PEQUEÑA','CAJAS PEQUEÑAS KRAFT LA ORIGINAL','CAJAS KRAFT MED','CAJA KRAFT LASAÑA'
-];
+  'CAJAS KRAFT PEQUEÑA (404-284-204)',
+  'CAJAS PARA STICKS',
+  'CAJA KRAFT GRANDE - (665-326-185)',
+  'CAJAS PEQUEÑAS KRAFT LA ORIGINAL',
+  'CAJAS KRAFT MED - (430-285-215)'
+].map(normalizaNombre);
+// Material de empaque que NO requiere etiquetado, pero sí debe poder
+// consumirse directo en Cronograma junto con la Materia Prima.
+const CRONOGRAMA_ME_EXTRA_NOMBRES = [
+  'FUNDAS BD 7X5X0.0025 STICKS',
+  'FUNDAS PIZZAS CONGELADAS VACIO BD 12.75X13.75X0.004 NAT',
+  'ENVASE ALUM C10',
+  'TAPA ENVASE ALUM C10',
+  'COPA SOUFFLE 2 OZ NEGRO',
+  'TAPA SOUFFLE 1.5 OZ'
+].map(normalizaNombre);
+function esIngredienteDeCronograma(item){
+  if(!item) return false;
+  if(item.tipo==='MATERIA_PRIMA') return true;
+  return nombreEnLista(item, CRONOGRAMA_ME_EXTRA_NOMBRES);
+}
 function selEsProductoSellable(item){
   if(!item) return false;
   if(item.tipo === 'PRODUCTO_VENTA') return true;
   if(item.tipo === 'MATERIAL_EMPAQUE'){
-    const n = (item.nombre||'').toUpperCase();
-    return SEL_CAJAS_PERMITIDAS.some(c=>n.includes(c));
+    return nombreEnLista(item, SEL_CAJAS_PERMITIDAS);
   }
   return false;
 }
@@ -6532,13 +6908,14 @@ async function selLoad(force){
 // sellar (producido menos lo ya sellado hasta ahora, para ese mismo lote).
 let cacheSelladoPendientes = [];
 async function selCargarPendientesSellado(){
-  const { data: producidos } = await sb.from('registro_produccion')
-    .select('codigo_producto, producto, lote, unid_producidas')
-    .eq('estado_verificacion','aprobado')
-    .gt('unid_producidas', 0)
+  // Ahora se toma directo de Cronograma (en cuanto se agrega la orden), sin
+  // esperar a que esté producida ni aprobada en Monitoreo — usa la cantidad
+  // real si ya se produjo, y si no, la cantidad programada como referencia.
+  const { data: ordenes } = await sb.from('cronograma')
+    .select('item_codigo, lote, cantidad_real, cantidad_programada, fecha')
     .order('fecha', {ascending:false})
     .limit(500);
-  if(!producidos || !producidos.length){ cacheSelladoPendientes = []; return; }
+  if(!ordenes || !ordenes.length){ cacheSelladoPendientes = []; return; }
   const { data: sellados } = await sb.from('sellado_registros').select('items').limit(3000);
   const selladoPorClave = {};
   (sellados||[]).forEach(row=>{
@@ -6549,10 +6926,12 @@ async function selCargarPendientesSellado(){
     });
   });
   const porClave = {};
-  producidos.forEach(p=>{
-    const clave = p.codigo_producto+'|'+(p.lote||'');
-    if(!porClave[clave]) porClave[clave] = { item_codigo:p.codigo_producto, item_nombre:p.producto, lote:p.lote, producido:0 };
-    porClave[clave].producido += Number(p.unid_producidas||0);
+  ordenes.forEach(p=>{
+    const cantidadReal = p.cantidad_real!=null ? Number(p.cantidad_real) : (p.cantidad_programada!=null ? Number(p.cantidad_programada) : 0);
+    if(cantidadReal<=0) return;
+    const clave = p.item_codigo+'|'+(p.lote||'');
+    if(!porClave[clave]) porClave[clave] = { item_codigo:p.item_codigo, lote:p.lote, producido:0 };
+    porClave[clave].producido += cantidadReal;
   });
   const pendientes = [];
   Object.values(porClave).forEach(p=>{
@@ -6560,7 +6939,7 @@ async function selCargarPendientesSellado(){
     const pendiente = Math.round((p.producido - yaSellado)*10000)/10000;
     if(pendiente > 0.001){
       const item = (cacheItems||[]).find(i=>i.codigo===p.item_codigo);
-      pendientes.push({ item_codigo:p.item_codigo, item_nombre:p.item_nombre, lote:p.lote, pendiente, producido:p.producido, medida: item?item.medida:'' });
+      pendientes.push({ item_codigo:p.item_codigo, item_nombre: item?item.nombre:p.item_codigo, lote:p.lote, pendiente, producido:p.producido, medida: item?item.medida:'' });
     }
   });
   cacheSelladoPendientes = pendientes;
@@ -6702,7 +7081,7 @@ function selRenderMachinesGrid(){
   if(!grid) return;
   const maquinas = SELLADO_ACTIVIDADES.filter(a=>a.esSellado);
   grid.innerHTML = maquinas.map(m=>selMachineCardHtml(m)).join('');
-  maquinas.forEach(m=>selRenderItemList(m.key));
+  maquinas.forEach(m=>{ selRenderItemList(m.key); selSearchItem(m.key, ''); });
 }
 function selMachineCardHtml(meta){
   const row = SelladoState.sesiones[meta.key];
@@ -6719,15 +7098,12 @@ function selMachineCardHtml(meta){
           ${!activos.length ? `<button type="button" title="Eliminar esta selladora" onclick="selEliminarSelladora('${meta.key}')" style="width:22px;height:22px;border:none;border-radius:50%;background:#F1F5F9;color:var(--danger);font-size:11px;line-height:1;">✕</button>` : ''}
         </div>
       </div>
-      <div id="selCardIdle_${meta.key}" class="field-row" style="margin-bottom:0;">
-        <button class="btn primary" type="button" style="width:100%;--accent:var(--materia)" onclick="selMostrarBuscarSellado('${meta.key}')">▶ Iniciar sellado</button>
-        <button class="btn ghost" type="button" style="width:100%;" onclick="selAbrirSelectorParada('${meta.key}', null)">⏸ Registrar parada</button>
-      </div>
-      <div id="selCardSearchWrap_${meta.key}" style="display:none;margin-top:8px;">
+      <button class="btn ghost" type="button" style="width:100%;margin-bottom:8px;" onclick="selAbrirSelectorParada('${meta.key}', null)">⏸ Registrar parada</button>
+      <div id="selCardSearchWrap_${meta.key}">
         <div class="field" style="margin-bottom:6px;">
           <input type="text" id="selCardSearch_${meta.key}" placeholder="Buscar producto por código o nombre…" oninput="selSearchItem('${meta.key}', this.value)">
         </div>
-        <div class="sub" style="margin-top:-4px;margin-bottom:6px;">Pendientes por sellar (según lo aprobado en Monitoreo):</div>
+        <div class="sub" style="margin-top:-4px;margin-bottom:6px;">Pendientes por sellar (aprobados en Monitoreo):</div>
         <div id="selCardResults_${meta.key}"></div>
       </div>
       <div id="selCardItems_${meta.key}"></div>
@@ -6912,9 +7288,10 @@ function selSearchItem(tipo, q){
     const pendientes = (cacheSelladoPendientes||[]).filter(p=>!q || p.item_codigo.toUpperCase().includes(q) || (p.item_nombre||'').toUpperCase().includes(q));
     if(!pendientes.length){ results.innerHTML = '<div class="sr-empty">Sin productos pendientes por sellar. Verifica que la producción esté aprobada en Monitoreo.</div>'; return; }
     results.innerHTML = pendientes.map(p=>`
-      <div class="sr-item" onclick="selAddItemPendiente('${tipo}','${escHtml(p.item_codigo)}','${escHtml(p.lote||'')}')">
-        <b>${escHtml(p.item_codigo)}</b>${escHtml(p.item_nombre)}
-        <span class="sub" style="display:block;">Lote ${escHtml(p.lote||'—')} · pendiente ${fmtNum(p.pendiente)} ${escHtml(p.medida)}</span>
+      <div class="reg-row sel-pendiente-card" onclick="selAddItemPendiente('${tipo}','${escHtml(p.item_codigo)}','${escHtml(p.lote||'')}')">
+        <div class="rmain"><span class="sup">${escHtml(p.item_codigo)}</span><span class="big">${escHtml(p.item_nombre)}</span></div>
+        <div class="rval" style="text-align:center;"><span class="sup">LOTE</span><span class="big">${escHtml(p.lote||'—')}</span></div>
+        <div class="rval"><span class="sup">${escHtml(p.medida)}</span><span class="big">${fmtNum(p.pendiente)}</span></div>
       </div>`).join('');
     return;
   }
@@ -6948,9 +7325,7 @@ async function selAddItemPendiente(tipo, codigo, lote){
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
   await selAddItem(tipo, false, item, { lote: lote||null, pendienteAlIniciar: p?p.pendiente:null });
   const s = document.getElementById('selCardSearch_'+tipo); if(s) s.value='';
-  const r = document.getElementById('selCardResults_'+tipo); if(r) r.innerHTML='';
-  const searchWrap = document.getElementById('selCardSearchWrap_'+tipo);
-  if(searchWrap) searchWrap.style.display = 'none';
+  selSearchItem(tipo, ''); // refresca la lista de pendientes (el que se eligió ya descontó su saldo)
 }
 async function selAddItemProducto(tipo, codigo){
   const row = await selEnsureSesion(tipo);
@@ -6958,9 +7333,7 @@ async function selAddItemProducto(tipo, codigo){
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
   await selAddItem(tipo, false, item);
   const s = document.getElementById('selCardSearch_'+tipo); if(s) s.value='';
-  const r = document.getElementById('selCardResults_'+tipo); if(r) r.innerHTML='';
-  const searchWrap = document.getElementById('selCardSearchWrap_'+tipo);
-  if(searchWrap) searchWrap.style.display = 'none';
+  selSearchItem(tipo, '');
 }
 async function selAddItem(tipo, esLimpieza, item, extra){
   const row = SelladoState.sesiones[tipo];
@@ -7380,6 +7753,16 @@ async function selSetCantidad(tipo, itemId, val){
   await selPersistItems(tipo);
   selRenderItemList(tipo);
 }
+// Refresca la lista de pendientes en TODAS las tarjetas de selladoras visibles
+// (no solo la que se acaba de usar), preservando lo que cada una tenga escrito
+// en su buscador — así, si en una selladora completan la cantidad de un lote,
+// las demás dejan de mostrarlo (o actualizan cuánto queda) de inmediato.
+function selRefrescarPendientesEnTodasLasSelladoras(){
+  SELLADO_ACTIVIDADES.filter(a=>a.esSellado).forEach(m=>{
+    const input = document.getElementById('selCardSearch_'+m.key);
+    selSearchItem(m.key, input ? input.value : '');
+  });
+}
 async function selDeleteItem(tipo, itemId){
   if(!confirm('¿Eliminar este ítem?')) return;
   const row = SelladoState.sesiones[tipo];
@@ -7392,6 +7775,7 @@ async function selDeleteItem(tipo, itemId){
   await selPersistItems(tipo);
   await selCargarPendientesSellado();
   selRenderItemList(tipo);
+  selRefrescarPendientesEnTodasLasSelladoras();
 }
 async function selUpdateFecha(tipo, val){
   const row = SelladoState.sesiones[tipo];
@@ -7420,6 +7804,12 @@ function selRenderItemList(tipo){
   const items = row ? (row.items||[]) : [];
   const activos = items.filter(i=>i.estado_timer==='corriendo'||i.estado_timer==='pausado');
   const card = document.querySelector(`.machine-card[data-tipo="${tipo}"]`);
+  // Solo se puede sellar un producto a la vez por selladora: mientras haya uno
+  // en curso o en pausa (que no sea una parada suelta), se oculta la lista de
+  // pendientes de ESA selladora — las demás siguen viéndola con normalidad.
+  const ocupadaConProducto = activos.some(i=>!i.es_parada);
+  const searchWrap = document.getElementById('selCardSearchWrap_'+tipo);
+  if(searchWrap) searchWrap.style.display = ocupadaConProducto ? 'none' : '';
   if(card){
     card.classList.toggle('active-sellado', activos.length>0);
     const statusEl = card.querySelector('.machine-status');
@@ -7427,11 +7817,6 @@ function selRenderItemList(tipo){
       statusEl.textContent = activos.length ? (activos.length===1?'En curso':'En curso ('+activos.length+')') : 'Libre';
       statusEl.classList.toggle('st-sellado', activos.length>0);
     }
-    // Mostrar u ocultar los botones de "Iniciar sellado"/"Registrar parada" según haya o no algo corriendo
-    const idleWrap = document.getElementById('selCardIdle_'+tipo);
-    const searchWrap = document.getElementById('selCardSearchWrap_'+tipo);
-    if(idleWrap) idleWrap.style.display = activos.length ? 'none' : 'flex';
-    if(searchWrap && activos.length) searchWrap.style.display = 'none';
   }
   if(!items.length){ wrap.innerHTML = '<div class="empty-state">Sin ítems agregados todavía.</div>'; selManageLiveTimers(); return; }
   const activosParaMostrar = activos;
@@ -7484,6 +7869,17 @@ async function selDetenerParadaIndependiente(tipo, itemId){
   selRenderItemList(tipo);
   toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
 }
+// Cajas/cartones que la fórmula del producto indica para esa cantidad a sellar
+// (mismo criterio que Etiquetado usa para las fundas, pero con la lista de cajas).
+function cajasDeFormula(itemCodigoProducto, cantidadReferencia){
+  const filaFicticia = { item_codigo: itemCodigoProducto, cantidad_real: cantidadReferencia, cantidad_programada: cantidadReferencia };
+  return (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===itemCodigoProducto).map(f=>{
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    if(!compItem || compItem.tipo!=='MATERIAL_EMPAQUE' || !nombreEnLista(compItem, SEL_CAJAS_PERMITIDAS)) return null;
+    const teorica = pfCantidadTeorica(filaFicticia, f.cod_componente);
+    return { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida, teorica, cantidad:null, lotes_consumidos:[] };
+  }).filter(Boolean);
+}
 function openSelItemModal(tipo, itemId, finalizando){
   const it = selFindItem(tipo, itemId);
   if(!it) return;
@@ -7518,15 +7914,16 @@ function openSelItemModal(tipo, itemId, finalizando){
       <div class="field"><label>Meta por Selladora (u/h)</label><input type="text" value="${fmtRaw(metaUh)}" disabled></div>
       ${it.pendiente_al_iniciar!=null ? `<div class="field"><label>Cantidad por sellar</label><input type="text" value="${fmtRaw(it.pendiente_al_iniciar)}" disabled></div>` : ''}
     </div>
-    <div class="field"><label>Cantidad sellada</label><input type="text" inputmode="decimal" id="selCantidad" value="${it.cantidad!=null?fmtRaw(it.cantidad):''}"></div>
+    <div class="field"><label>Cantidad sellada</label><input type="text" inputmode="decimal" id="selCantidad" placeholder="Escribe la cantidad realmente sellada…" value="${it.cantidad!=null?fmtRaw(it.cantidad):''}"></div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">La meta se define en Configuración → Metas de Sellado.</div>
     <div class="sel-section-title">Cartones / cajas usados</div>
-    <div class="sub" style="margin-top:-6px;">Esto sí descuenta del Kardex — es lo que realmente se consume al sellar.</div>
+    <div class="sub" style="margin-top:-6px;">Esto sí descuenta del Kardex — es lo que realmente se consume al sellar. Se precargan según la fórmula del producto.</div>
+    <div id="selCartonList"></div>
     <div class="field">
-      <input type="text" id="selCartonSearch" placeholder="Buscar cartón/caja por código o nombre…" oninput="selBuscarCarton(this.value)">
+      <label>Agregar otro cartón/caja</label>
+      <input type="text" id="selCartonSearch" placeholder="Buscar por código o nombre…" oninput="selBuscarCarton(this.value)">
       <div class="search-results" id="selCartonResults"></div>
     </div>
-    <div id="selCartonList"></div>
     ` : ''}
     <div class="field"><label>Observaciones</label>
       <textarea id="selObs" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">${escHtml(it.observaciones||'')}</textarea>
@@ -7547,64 +7944,152 @@ function openSelItemModal(tipo, itemId, finalizando){
     </div>
   `);
   if(meta.esSellado && it.item_codigo!=='N/A'){
-    SelCartonState = { itemId, cartones: (it.cartones||[]).slice() };
+    const cantidadRef = it.cantidad!=null ? it.cantidad : it.pendiente_al_iniciar;
+    SelCartonState = { itemId, cartones: (it.cartones && it.cartones.length) ? it.cartones.slice() : cajasDeFormula(it.item_codigo, cantidadRef) };
     selRenderCartonList();
   }
 }
 let SelCartonState = { itemId:null, cartones:[] };
+function selRenderCartonList(){
+  const wrap = document.getElementById('selCartonList');
+  if(!wrap) return;
+  const list = SelCartonState.cartones||[];
+  if(!list.length){ wrap.innerHTML = '<div class="empty-state">Este producto no tiene cajas definidas en su fórmula. Agrégalas abajo si hace falta.</div>'; return; }
+  wrap.innerHTML = list.map((c,idx)=>{
+    const lotesN = (c.lotes_consumidos||[]).length;
+    let valorHtml, accionHtml;
+    if(c.cantidad!=null){
+      valorHtml = `<div class="ci-val"><span class="cant">${fmtRaw(c.cantidad)}</span><span class="med">${escHtml(c.medida)}</span></div>`;
+      accionHtml = `<div class="ci-lote"><button class="${lotesN?'set':''}" onclick="selAbrirLotePickerCarton(${idx})">${lotesN?('Lote: '+(c.lotes_consumidos.map(l=>l.lote).join(', '))):'Elegir lote'}</button></div>`;
+    } else {
+      valorHtml = c.teorica!=null
+        ? `<div class="ci-val"><span class="cant" style="color:var(--muted);">${fmtNum(c.teorica)}</span><span class="med" style="color:var(--muted);">${escHtml(c.medida)} teórico</span></div>`
+        : `<div class="ci-val"></div>`;
+      accionHtml = `<div class="ci-lote"><button onclick="selAbrirCantidadCarton(${idx})">Cantidad usada</button></div>`;
+    }
+    return `<div class="ci-row">
+      <div class="ci-name"><span class="sup">${escHtml(c.item_codigo)}</span><span class="nm">${escHtml(c.item_nombre)}</span></div>
+      ${valorHtml}
+      ${accionHtml}
+      <button class="ing-rm" title="Eliminar" onclick="selQuitarCarton(${idx})">✕</button>
+    </div>`;
+  }).join('');
+}
+function selAbrirCantidadCarton(idx){
+  const c = SelCartonState.cartones[idx];
+  if(!c) return;
+  openModal(`
+    <h3>${escHtml(c.item_nombre)}</h3>
+    <div class="msub">${escHtml(c.item_codigo)}${c.teorica!=null?(' · teórica '+fmtNum(c.teorica)+' '+escHtml(c.medida)):''}</div>
+    <div class="field"><label>Cantidad usada (${escHtml(c.medida)})</label>
+      <input type="text" inputmode="decimal" id="selCartonCantModalInput" value="${c.teorica!=null?fmtRaw(c.teorica):''}">
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarCantidadCarton(${idx})">Confirmar</button>
+    </div>
+  `);
+  setTimeout(()=>{ const el = document.getElementById('selCartonCantModalInput'); if(el) el.focus(); }, 60);
+}
+function selConfirmarCantidadCarton(idx){
+  const c = SelCartonState.cartones[idx];
+  if(!c) return;
+  const v = parseFloat((document.getElementById('selCartonCantModalInput').value||'').replace(',','.'));
+  if(!v || v<=0){ toast('Ingresa la cantidad usada'); return; }
+  c.cantidad = v;
+  c.lotes_consumidos = [];
+  closeModal();
+  selRenderCartonList();
+}
 function selBuscarCarton(q){
   q = (q||'').trim().toUpperCase();
   const results = document.getElementById('selCartonResults');
   if(!results) return;
   if(!q){ results.innerHTML=''; return; }
-  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
-  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="selElegirCarton('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+  const yaAgregados = new Set(SelCartonState.cartones.map(c=>c.item_codigo));
+  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(i, SEL_CAJAS_PERMITIDAS) && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="selAgregarCartonExtra('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
-async function selElegirCarton(codigo){
+function selAgregarCartonExtra(codigo){
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
-  const { data } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
+  SelCartonState.cartones.push({ item_codigo:codigo, item_nombre:item?item.nombre:codigo, medida:item?item.medida:'', teorica:null, cantidad:null, lotes_consumidos:[] });
   const s = document.getElementById('selCartonSearch'); if(s) s.value='';
   const r = document.getElementById('selCartonResults'); if(r) r.innerHTML='';
-  openModal(`
-    <h3>${escHtml(item?item.nombre:codigo)}</h3>
-    <div class="msub">${escHtml(codigo)}</div>
-    <div class="field"><label>Lote</label>
-      <select id="cartonLote">
-        <option value="">Selecciona…</option>
-        ${(data||[]).map(l=>`<option value="${escHtml(l.lote)}" data-disp="${l.cantidad_disponible}">${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)}</option>`).join('')}
-      </select>
-    </div>
-    <div class="field"><label>Cantidad usada (${escHtml(item?item.medida:'')})</label><input type="text" inputmode="decimal" id="cartonCantidad"></div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarCarton('${escHtml(codigo)}','${escHtml(item?item.nombre:codigo)}','${escHtml(item?item.medida:'')}')">Agregar</button>
-    </div>
-  `);
-}
-function selConfirmarCarton(codigo, nombre, medida){
-  const lote = document.getElementById('cartonLote').value;
-  const cant = parseFloat((document.getElementById('cartonCantidad').value||'0').replace(',','.'));
-  if(!lote){ toast('Selecciona el lote'); return; }
-  if(!cant || cant<=0){ toast('Ingresa la cantidad usada'); return; }
-  SelCartonState.cartones.push({ item_codigo:codigo, item_nombre:nombre, medida, lote, cantidad:cant });
-  closeModal();
   selRenderCartonList();
 }
 function selQuitarCarton(idx){
   SelCartonState.cartones.splice(idx,1);
   selRenderCartonList();
 }
-function selRenderCartonList(){
-  const wrap = document.getElementById('selCartonList');
-  if(!wrap) return;
-  const list = SelCartonState.cartones||[];
-  wrap.innerHTML = list.length ? list.map((c,idx)=>`
-    <div class="reg-row">
-      <div class="rmain"><span class="sup">${escHtml(c.item_codigo)} · Lote ${escHtml(c.lote)}</span><span class="big">${escHtml(c.item_nombre)}</span></div>
-      <div class="rval"><span class="big">${fmtNum(c.cantidad)}</span><span class="sub">${escHtml(c.medida)}</span></div>
-      <button class="redit" title="Quitar" onclick="selQuitarCarton(${idx})">✕</button>
+/* ---------------- Selector de lotes (varios, hasta completar la cantidad) para cartones ---------------- */
+let selCartonLoteConsumo = { total:0, seleccion:{}, disponibles:[], idx:null };
+async function selAbrirLotePickerCarton(idx){
+  const c = SelCartonState.cartones[idx];
+  if(!c) return;
+  const cantidad = c.cantidad;
+  if(!cantidad || cantidad<=0){ toast('Primero ingresa la cantidad usada'); return; }
+  openModal(`
+    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(c.item_codigo)}</span>
+    <h3 style="margin-top:2px;">${escHtml(c.item_nombre)}</h3>
+    <div class="msub">Selecciona el o los lotes a consumir</div>
+    <div id="selCartonLoteList"><div class="empty-state">Cargando…</div></div>
+    <div class="lote-remain" id="selCartonLoteRemain"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarLotesCarton(${idx})">Confirmar</button>
     </div>
-  `).join('') : '<div class="empty-state">Sin cartones/cajas agregados todavía.</div>';
+  `);
+  const { data, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
+  const listEl = document.getElementById('selCartonLoteList');
+  if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const previamente = new Set((c.lotes_consumidos||[]).map(l=>l.lote));
+  selCartonLoteConsumo = { total: Number(cantidad), seleccion:{}, disponibles: data||[], idx };
+  (c.lotes_consumidos||[]).forEach(l=>{ selCartonLoteConsumo.seleccion[l.lote] = l.cantidad; });
+  if(!data || !data.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles registrados en Kardex</div>'; }
+  else{
+    listEl.innerHTML = data.map(l=>`
+      <div class="lote-row">
+        <input type="checkbox" ${previamente.has(l.lote)?'checked':''} onchange="selToggleLoteCarton('${escHtml(l.lote)}', ${l.cantidad_disponible}, this.checked)">
+        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>Ingreso ${l.fecha_ingreso?l.fecha_ingreso.split('-').reverse().join('/'):'—'}${l.fecha_caducidad?(' · Caduca '+l.fecha_caducidad.split('-').reverse().join('/')):''}</span></div>
+        <div class="lq">${fmtNum(l.cantidad_disponible)} ${escHtml(c.medida)}</div>
+      </div>
+    `).join('');
+  }
+  selCartonLoteRecalc();
+}
+function selToggleLoteCarton(lote, disponible, checked){
+  if(checked){
+    const yaAsignado = Object.values(selCartonLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+    const falta = Math.max(0, selCartonLoteConsumo.total - yaAsignado);
+    selCartonLoteConsumo.seleccion[lote] = Math.min(disponible, falta);
+  } else {
+    delete selCartonLoteConsumo.seleccion[lote];
+  }
+  selCartonLoteRecalc();
+}
+function selCartonLoteRecalc(){
+  const asignado = Object.values(selCartonLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+  const falta = Math.round((selCartonLoteConsumo.total - asignado)*10000)/10000;
+  const remainEl = document.getElementById('selCartonLoteRemain');
+  if(remainEl){
+    remainEl.className = 'lote-remain ' + (falta<=0.001 ? 'ok' : 'warn');
+    remainEl.innerHTML = `<span>A consumir: ${fmtNum(selCartonLoteConsumo.total)}</span><span>${falta>0.001 ? ('Falta '+fmtNum(falta)) : 'Completo'}</span>`;
+  }
+}
+function selConfirmarLotesCarton(idx){
+  const c = SelCartonState.cartones[idx];
+  if(!c) return;
+  const seleccionados = Object.entries(selCartonLoteConsumo.seleccion).filter(([,v])=>v>0).map(([lote,cantidad])=>({lote, cantidad}));
+  if(!seleccionados.length){ toast('Selecciona al menos un lote'); return; }
+  const asignado = seleccionados.reduce((s,l)=>s+l.cantidad,0);
+  const falta = Math.round((selCartonLoteConsumo.total - asignado)*10000)/10000;
+  if(falta > 0.001){
+    toast('Los lotes elegidos no completan la cantidad a consumir. Falta ' + fmtNum(falta) + '. Elige otro lote o ajusta la cantidad.');
+    return;
+  }
+  c.lotes_consumidos = seleccionados;
+  closeModal();
+  selRenderCartonList();
 }
 // Escribe en Kardex los cartones/cajas usados en un ítem de sellado (reconciliable:
 // borra lo anterior con el mismo comprobante y vuelve a insertar lo actual).
@@ -7612,10 +8097,14 @@ async function selGuardarCartonesKardex(it){
   const comprobante = 'SELLADO-CARTON ' + it.id;
   const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   if(errDel) return { error: errDel };
-  const movimientos = (it.cartones||[]).filter(c=>Number(c.cantidad)>0).map(c=>({
-    item_codigo: c.item_codigo, fecha: todayISO(), lote: c.lote||null,
-    comprobante, entra:0, sale: Number(c.cantidad)
-  }));
+  const movimientos = [];
+  (it.cartones||[]).forEach(c=>{
+    (c.lotes_consumidos||[]).forEach(l=>{
+      if(Number(l.cantidad)>0){
+        movimientos.push({ item_codigo: c.item_codigo, fecha: todayISO(), lote: l.lote||null, comprobante, entra:0, sale: Number(l.cantidad) });
+      }
+    });
+  });
   if(movimientos.length){
     const { error } = await sb.from('kardex_movimientos').insert(movimientos);
     if(error) return { error };
@@ -7681,6 +8170,18 @@ async function saveSelItemModal(tipo, itemId){
   } else if(hiManual && hfManual){
     selRecalcKpi(it);
   }
+  if(meta.esSellado && it.item_codigo!=='N/A' && it.estado_timer==='detenido'){
+    // Solo se puede registrar el cierre (y solo entonces desaparece el conteo)
+    // cuando ya están todos los datos obligatorios.
+    const faltan = [];
+    if(it.cantidad==null || it.cantidad<=0) faltan.push('Cantidad sellada');
+    if(!it.lote) faltan.push('Lote');
+    if(!it.responsable) faltan.push('Responsable');
+    if(faltan.length){
+      toast('Faltan datos para finalizar: ' + faltan.join(', '));
+      return;
+    }
+  }
   if(SelCartonState.itemId === itemId){
     it.cartones = SelCartonState.cartones;
     const { error: errCarton } = await selGuardarCartonesKardex(it);
@@ -7691,6 +8192,7 @@ async function saveSelItemModal(tipo, itemId){
   await selCargarPendientesSellado(); // recalcular pendientes ya que se selló algo nuevo
   closeModal();
   selRenderItemList(tipo);
+  selRefrescarPendientesEnTodasLasSelladoras();
   toast('Guardado');
 }
 async function openSelLotePicker(tipo, itemId){
@@ -9093,7 +9595,7 @@ function despToggleLote(lote, disponible, checked){
   if(checked){
     const yaAsignado = Object.values(despLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
     const falta = Math.max(0, despLoteConsumo.total - yaAsignado);
-    despLoteConsumo.seleccion[lote] = Math.min(disponible, falta || disponible);
+    despLoteConsumo.seleccion[lote] = Math.min(disponible, falta);
   } else {
     delete despLoteConsumo.seleccion[lote];
   }
@@ -9435,11 +9937,14 @@ async function subscribeConnStatus(){
 }
 
 /* ============================= BOOT ============================= */
-(function boot(){
-  renderAreaGrid();
+(async function boot(){
+  renderAreaGrid(); // pintura rápida con las áreas fijas
   const saved = sessionStorage.getItem('propizzec_area');
   if(saved){ enterApp(saved); }
-  else{ loadUsuariosArea(); } // precarga claves para validar más rápido al elegir área
+  else{
+    await loadUsuariosArea(); // precarga claves para validar más rápido al elegir área
+    renderAreaGrid(); // repinta agregando las áreas personalizadas que existan
+  }
 })();
 </script>
 </body>
