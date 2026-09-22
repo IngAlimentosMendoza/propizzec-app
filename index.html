@@ -2616,9 +2616,11 @@ function renderKardexTab(){
   `).join('');
 }
 
+let KxHistState = { tab:'movimientos' };
 async function openKardexHistory(codigo){
   const item = (cacheStock||[]).find(r=>r.codigo===codigo);
   const soloLectura = !!(permisoActual() && permisoActual().soloKardex);
+  KxHistState.tab = 'movimientos';
   openModal(`
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(item ? item.nombre : codigo)}</h3>
@@ -2628,13 +2630,35 @@ async function openKardexHistory(codigo){
       <button class="btn primary" style="--accent:var(--personal)" onclick="openAjusteModal('${escHtml(codigo)}')">⚙️ Ajuste</button>
     </div>
     `}
-    <div class="msub">Historial de movimientos (Kardex)</div>
-    <div id="kxLotesActuales" class="reg-list" style="margin-bottom:14px;"><div class="empty-state">Cargando lotes…</div></div>
-    <div id="kxHist"><div class="empty-state">Cargando…</div></div>
+    <div class="tabbar">
+      <button class="tabbtn ${KxHistState.tab==='movimientos'?'active':''}" data-tab="movimientos" onclick="kxHistGoTab('${escHtml(codigo)}', 'movimientos')">Movimientos</button>
+      <button class="tabbtn ${KxHistState.tab==='lotes'?'active':''}" data-tab="lotes" onclick="kxHistGoTab('${escHtml(codigo)}', 'lotes')">Lotes</button>
+    </div>
+    <div id="kxHistBody"><div class="empty-state">Cargando…</div></div>
   `);
-  kxRenderLotesActuales(codigo, item);
+  kxHistRenderBody(codigo, item);
+}
+function kxHistGoTab(codigo, tab){
+  KxHistState.tab = tab;
+  document.querySelectorAll('#modalPanel .tabbar .tabbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  const item = (cacheStock||[]).find(r=>r.codigo===codigo);
+  kxHistRenderBody(codigo, item);
+}
+function kxHistRenderBody(codigo, item){
+  const body = document.getElementById('kxHistBody');
+  if(!body) return;
+  if(KxHistState.tab === 'lotes'){
+    body.innerHTML = `<div class="reg-list" id="kxLotesActuales"><div class="empty-state">Cargando lotes…</div></div>`;
+    kxRenderLotesActuales(codigo, item);
+  } else {
+    body.innerHTML = `<div class="msub">Historial de movimientos (Kardex)</div><div id="kxHist"><div class="empty-state">Cargando…</div></div>`;
+    kxRenderMovimientos(codigo, item);
+  }
+}
+async function kxRenderMovimientos(codigo, item){
   const { data, error } = await sb.from('kardex_movimientos').select('*').eq('item_codigo', codigo).order('fecha', {ascending:true}).order('created_at', {ascending:true});
   const hist = document.getElementById('kxHist');
+  if(!hist) return;
   if(error || !data){ hist.innerHTML = '<div class="empty-state">No se pudo cargar el historial</div>'; return; }
   if(!data.length){ hist.innerHTML = '<div class="empty-state">Sin movimientos registrados</div>'; return; }
   let running = 0;
@@ -3619,16 +3643,25 @@ const DISCOS_NOMBRES = [
   'DISCO DE PIZZA GRANDE 30.0',
   'DISCO PIZZA PEQUEÑO 16.5'
 ].map(normalizaNombre);
-async function kardexEscribirDiscoTeorico(row){
+// Se descuenta/ingresa al Kardex desde que se CREA la orden (no se espera a
+// que Monitoreo la apruebe): entra con la cantidad teórica (programada), y
+// se corrige sola —no se duplica— cuando cambia la cantidad programada antes
+// de aprobar, o cuando Monitoreo aprueba con la cantidad real (mismo
+// comprobante 'PRODUCCION N° <orden>' en los tres casos).
+async function kardexEscribirProduccionTeorica(row){
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
-  if(!item || !nombreEnLista(item, DISCOS_NOMBRES)) return;
-  if(!(row.cantidad_programada>0)) return;
+  if(!item) return { error: null };
   const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
+  const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
+  if(errDel) return { error: errDel };
+  const cantidad = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
+  if(!(cantidad>0)) return { error: null };
   const loteProducto = (item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
-  await sb.from('kardex_movimientos').insert({
+  const { error } = await sb.from('kardex_movimientos').insert({
     item_codigo: row.item_codigo, fecha: row.fecha, lote: loteProducto,
-    comprobante, entra: row.cantidad_programada, sale: 0
+    comprobante, entra: cantidad, sale: 0
   });
+  return { error: error||null };
 }
 async function crConfirmAdd(codigo){
   const cant = parseFloat((document.getElementById('crCantProg').value||'0').replace(',','.')) || 0;
@@ -3649,7 +3682,7 @@ async function crConfirmAdd(codigo){
     const rows = ingredientes.map(f=>({ cronograma_id: data.id, item_codigo: f.cod_componente }));
     await sb.from('cronograma_ingredientes').insert(rows);
   }
-  await kardexEscribirDiscoTeorico(data);
+  await kardexEscribirProduccionTeorica(data);
   await invLoad(true);
   closeModal();
   await planLoad(true);
@@ -4025,10 +4058,75 @@ async function pfDetenerParada(id, cronogramaId){
   pfLoadParadasSection(cronogramaId);
 }
 /* ---------------- Modal de producción (ventana emergente por producto) ---------------- */
+function openCronogramaFormBloqueado(row, item){
+  const cant = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
+  const ingredientes = (row.cronograma_ingredientes||[]);
+  // El personal se guarda como historial (cada entrada/salida crea su propio
+  // registro), así que para mostrar "quién trabajó" hay que agrupar por
+  // nombre — si no, una persona que entró y salió más de una vez aparecería
+  // repetida y el conteo se ve inflado.
+  const personalPorNombre = {};
+  (row.cronograma_personal||[]).forEach(p=>{
+    if(!personalPorNombre[p.nombre]) personalPorNombre[p.nombre] = { nombre:p.nombre, ingreso:p.hora_ingreso, salida:p.hora_salida };
+    else {
+      const acc = personalPorNombre[p.nombre];
+      if(p.hora_ingreso && (!acc.ingreso || p.hora_ingreso < acc.ingreso)) acc.ingreso = p.hora_ingreso;
+      if(!p.hora_salida) acc.salida = null; // si en algún tramo sigue sin marcar salida, se considera que no salió del todo
+      else if(acc.salida!==null && (!acc.salida || p.hora_salida > acc.salida)) acc.salida = p.hora_salida;
+    }
+  });
+  const personal = Object.values(personalPorNombre);
+  openModal(`
+    <div class="op-head">
+      <div class="field"><label>Fecha</label><input type="text" value="${escHtml(row.fecha)}" disabled></div>
+      <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
+    </div>
+    <div class="readonly-box" style="margin-bottom:14px;background:rgba(5,150,105,.08);border-color:var(--ok);">
+      🔒 <b>Esta orden ya fue verificada y aprobada en Monitoreo.</b> Para corregir algo, primero hay que usar "↩ Volver a verificar" desde Monitoreo.
+    </div>
+    <div class="pf-row">
+      <div class="field"><label>${escHtml(row.item_codigo)} — Producto</label><input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Lote</label><input type="text" value="${escHtml(row.lote||'')}" disabled></div>
+      <div class="field"><label>Cantidad</label><input type="text" value="${fmtRaw(cant)}" disabled></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Hora de inicio</label><input type="text" value="${row.hora_inicio?new Date(row.hora_inicio).toTimeString().slice(0,5):''}" disabled></div>
+      <div class="field"><label>Hora de fin</label><input type="text" value="${row.hora_fin?new Date(row.hora_fin).toTimeString().slice(0,5):''}" disabled></div>
+    </div>
+    <div class="field"><label>Responsable</label><input type="text" value="${escHtml(row.responsable||'')}" disabled></div>
+    ${row.motivo_merma ? `<div class="field-row">
+      <div class="field"><label>Motivo de merma</label><input type="text" value="${escHtml(row.motivo_merma)}" disabled></div>
+      <div class="field"><label>Merma</label><input type="text" value="${fmtRaw(row.merma_proceso||0)} ${escHtml(row.merma_medida||'')}" disabled></div>
+    </div>` : ''}
+
+    <div class="field"><label>Ingredientes (formulación)</label>
+      ${ingredientes.length ? ingredientes.map(ci=>{
+        const ciItem = (cacheItems||[]).find(i=>i.codigo===ci.item_codigo);
+        return `<div class="ci-row">
+          <div class="ci-name"><span class="sup">${escHtml(ci.item_codigo)}</span><span class="nm">${escHtml(ciItem?ciItem.nombre:ci.item_codigo)}</span></div>
+          <div class="ci-val"><span class="cant">${ci.cantidad_consumida!=null?fmtRaw(ci.cantidad_consumida):'—'}</span><span class="med">${escHtml(ciItem?ciItem.medida:'')}</span></div>
+        </div>`;
+      }).join('') : '<div class="empty-state">Sin ingredientes</div>'}
+    </div>
+    <div class="field"><label>Personal (${personal.length})</label>
+      ${personal.length ? personal.map(p=>`<div class="reg-row"><div class="rmain"><span class="big">${escHtml(p.nombre)}</span></div><div class="rval"><span class="sup">${escHtml(p.ingreso||'')}${p.salida?(' – '+escHtml(p.salida)):''}</span></div></div>`).join('') : '<div class="empty-state">Sin personal registrado</div>'}
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+    </div>
+  `);
+}
 function openCronogramaForm(id){
   const row = (cacheCronograma||[]).find(c=>c.id===id);
   if(!row) return;
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
+  if(row.estado_verificacion === 'aprobado'){
+    openCronogramaFormBloqueado(row, item);
+    return;
+  }
   const lote = row.lote || ddMMyy(row.fecha);
   if(!row.lote){
     // Órdenes creadas antes de este ajuste podían quedarse sin lote guardado
@@ -4053,7 +4151,7 @@ function openCronogramaForm(id){
     <div class="pf-row">
       <div class="field">
         <label>Cantidad<span style="text-transform:none;color:var(--muted);"> (real producida)</span></label>
-        <input type="text" inputmode="decimal" id="pfCantidad" value="${fmtRaw(cant)}" onchange="planUpdateField('${id}','cantidad_real',parseFloat((this.value||'0').replace(',','.')))">
+        <input type="text" inputmode="decimal" id="pfCantidad" value="${fmtRaw(cant)}" onchange="crActualizarCantidadReal('${id}', this.value)">
       </div>
     </div>
     <div class="pf-row">
@@ -4186,7 +4284,7 @@ async function crConfirmCambioProducto(id, codigo){
   if(!row) return;
   if(codigo === row.item_codigo){ closeModalAll(); openCronogramaForm(id); return; }
   if(!confirm('¿Cambiar el producto de esta orden? Se reemplazará la lista de ingredientes por la fórmula del nuevo producto.')) return;
-  const { error } = await sb.from('cronograma').update({ item_codigo: codigo }).eq('id', id);
+  const { error } = await sb.from('cronograma').update({ item_codigo: codigo, cantidad_real: null }).eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   // Si algún ingrediente de la fórmula anterior ya tenía lote elegido (y por lo
   // tanto ya se había descontado del Kardex), hay que revertir ese descuento
@@ -4204,6 +4302,10 @@ async function crConfirmCambioProducto(id, codigo){
     const rows = nuevaFormula.map(f=>({ cronograma_id: id, item_codigo: f.cod_componente }));
     await sb.from('cronograma_ingredientes').insert(rows);
   }
+  // Corrige también la entrada del producto terminado en Kardex: borra la del
+  // producto anterior (mismo comprobante) y la vuelve a crear para el nuevo.
+  const rowActualizado = { ...row, item_codigo: codigo, cantidad_real: null };
+  await kardexEscribirProduccionTeorica(rowActualizado);
   await Promise.all([planLoad(true), invLoad(true)]);
   toast('Producto actualizado');
   closeModalAll();
@@ -4216,6 +4318,18 @@ async function planUpdateField(id, field, value){
   if(error){ toast('Error: ' + error.message); return; }
   const row = (cacheCronograma||[]).find(c=>c.id===id);
   if(row) row[field] = value;
+}
+async function crActualizarCantidadReal(id, valorTxt){
+  const valor = parseFloat((valorTxt||'0').replace(',','.'));
+  await planUpdateField(id, 'cantidad_real', isNaN(valor) ? null : valor);
+  // El Kardex se mantiene al día con la última cantidad conocida (real si ya
+  // se ingresó, si no la programada) — no se espera a que Monitoreo apruebe.
+  const row = (cacheCronograma||[]).find(c=>c.id===id);
+  if(row){
+    const { error } = await kardexEscribirProduccionTeorica(row);
+    if(error) toast('Se guardó la cantidad, pero hubo un error al actualizar el Kardex: ' + error.message);
+    await invLoad(true);
+  }
 }
 async function pfAddMotivoMerma(id){
   const nombre = document.getElementById('pfMotivoMermaNuevo').value.trim();
@@ -4464,16 +4578,25 @@ async function confirmInicioFin(cronogramaIngId, cual){
   } else if(cual === 'directo'){
     const consumida = Math.round(val*10000)/10000;
     patch = { cantidad_inicio: null, cantidad_fin: null, cantidad_consumida: consumida };
-    if(sinLote) patch.lotes_consumidos = [{ lote:'N/A', cantidad: consumida }];
+    patch.lotes_consumidos = sinLote ? [{ lote:'N/A', cantidad: consumida }] : []; // si requiere lote, se limpia para que lo vuelvan a elegir con la cantidad nueva
   } else {
     // buscar el registro actual para calcular consumida = inicio - fin
     const inicio = ciActual ? Number(ciActual.cantidad_inicio||0) : 0;
     const consumida = Math.round((inicio - val)*10000)/10000;
     patch = { cantidad_fin: val, cantidad_consumida: consumida };
-    if(sinLote) patch.lotes_consumidos = [{ lote:'N/A', cantidad: consumida }];
+    patch.lotes_consumidos = sinLote ? [{ lote:'N/A', cantidad: consumida }] : [];
   }
   const { error } = await sb.from('cronograma_ingredientes').update(patch).eq('id', cronogramaIngId);
   if(error){ toast('Error: ' + error.message); return; }
+  // Si el ítem SÍ requiere lote, la cantidad cambió y ya no coincide con el que
+  // se había elegido — hay que volver a elegir el lote para la nueva cantidad
+  // (se revierte lo anterior). Los que no requieren lote (ej. agua) no tienen
+  // inventario que descontar — su "cantidad_consumida" es solo un registro de
+  // referencia de cuánto se usó, no afecta el Kardex.
+  if(!sinLote && patch.lotes_consumidos !== undefined){
+    await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + cronogramaIngId);
+    await invLoad(true);
+  }
   await planLoad(true);
   closeModalAll(); // se va a reabrir el modal de producción con datos frescos; evita dejar una versión vieja en la pila
   const row = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
@@ -4578,32 +4701,7 @@ async function kardexEscribirIngredienteConsumo(cronogramaIngId, itemCodigo, fec
   return { error: null };
 }
 
-/* ---------------- Finalizar orden → ya NO escribe en Kardex (eso pasa al Verificar en Monitoreo) ---------------- */
-// Escribe en Kardex la producción de una orden: descuenta los ingredientes
-// consumidos y agrega el producto terminado. Se usa SOLO al verificar en
-// Monitoreo (ya no se llama desde Cronograma). Reconciliable: se puede
-// llamar varias veces sin duplicar, porque primero borra lo que esta
-// orden haya generado antes.
-async function kardexEscribirProduccion(row){
-  // Los ingredientes YA se descontaron del Kardex al momento de elegir el lote
-  // (ver confirmLotes/kardexEscribirIngredienteConsumo) — aquí solo se registra
-  // el producto terminado, que sí depende de que Monitoreo confirme la cantidad real.
-  const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
-  const cantidad = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
-  const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
-  const movimientos = [];
-  if(cantidad>0){
-    const loteProducto = (item && item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
-    movimientos.push({ item_codigo: row.item_codigo, fecha: row.fecha, lote: loteProducto, comprobante, entra: cantidad, sale: 0 });
-  }
-  const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
-  if(errDel) return { error: errDel };
-  if(movimientos.length){
-    const { error } = await sb.from('kardex_movimientos').insert(movimientos);
-    if(error) return { error };
-  }
-  return { error: null };
-}
+
 // Revierte (borra) todo lo que esta orden haya escrito en Kardex: la producción
 // en sí y el rechazo de calidad. Se usa al "Volver a verificar".
 async function kardexRevertirProduccion(row){
@@ -4611,11 +4709,11 @@ async function kardexRevertirProduccion(row){
   const comprobanteRechazo = 'RECHAZO PRODUCCION N°' + (row.orden_produccion||row.id);
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteRechazo);
-  // Para discos, no se debe dejar el Kardex en cero: ya se venían usando desde
-  // que se creó la orden, así que se restaura la entrada teórica en vez de
-  // borrarla del todo (si el llamador no trae los datos completos del
-  // cronograma, kardexEscribirDiscoTeorico simplemente no hace nada).
-  await kardexEscribirDiscoTeorico(row);
+  // No se debe dejar el Kardex en cero: el producto ya se venía usando desde
+  // que se creó la orden, así que se restaura la entrada teórica/real en vez
+  // de borrarla del todo (si el llamador no trae los datos completos del
+  // cronograma, kardexEscribirProduccionTeorica simplemente no hace nada).
+  await kardexEscribirProduccionTeorica(row);
 }
 async function guardarProduccion(cronogramaId){
   const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
@@ -5659,6 +5757,7 @@ async function renderMonitoreo(){
 async function monCambiarFecha(fecha){
   planFechaActual = fecha || todayISO();
   MonState.selId = null; // el producto seleccionado ya no aplica si se cambia de fecha
+  MonState.qLista = ''; // limpia cualquier búsqueda que haya quedado de la fecha anterior
   await monLoad(true);
   monRenderBody();
 }
@@ -6102,7 +6201,7 @@ async function monVerificar(id){
   delete payload.id; // deja que Supabase mantenga/asigne el id real
   const { error } = await sb.from('registro_produccion').upsert(payload, { onConflict:'cronograma_id' });
   if(error){ toast('Error al guardar: ' + error.message); return; }
-  const { error: errK } = await kardexEscribirProduccion(cr);
+  const { error: errK } = await kardexEscribirProduccionTeorica(cr);
   if(errK){ toast('Se guardó la verificación, pero hubo un error al escribir en Kardex: ' + errK.message); return; }
   const comprobanteRechazo = 'RECHAZO PRODUCCION N°' + (cr.orden_produccion||cr.id);
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteRechazo);
@@ -6257,12 +6356,37 @@ async function monToggleCandado(id){
     const { error } = await sb.from('registro_produccion').update({ locked:false }).eq('id', id);
     if(error){ toast('Error: '+error.message); return; }
     reg.locked = false;
+    // Avisa a Planificación que esta orden quedó pendiente de revisar otra vez —
+    // si no, al volver al día de hoy no aparece como algo que falta por verificar
+    // (el "atrasado ⚠" solo mira órdenes que NO estén en estado "aprobado").
+    if(reg.cronograma_id){
+      await sb.from('cronograma').update({ estado_verificacion:'revisar' }).eq('id', reg.cronograma_id);
+      const cr = (cacheCronograma||[]).find(c=>c.id===reg.cronograma_id);
+      if(cr) cr.estado_verificacion = 'revisar';
+    }
   }
   abrirMonRegistroDesdeCandado(id);
 }
-function abrirMonRegistroDesdeCandado(id){
+async function abrirMonRegistroDesdeCandado(id){
   const reg = (MonRegState.rows||[]).find(r=>r.id===id);
   if(!reg || !reg.cronograma_id) return;
+  // La fecha que se está viendo en Producción Operativa NO cambia — la orden
+  // (aunque sea de otro día) se agrega directo a lo que ya se está viendo,
+  // igual que las órdenes atrasadas de Planificación.
+  if(!(cacheCronograma||[]).some(c=>c.id===reg.cronograma_id)){
+    const { data: cr } = await sb.from('cronograma').select('*, cronograma_ingredientes(*), cronograma_personal(*)').eq('id', reg.cronograma_id).single();
+    if(cr){
+      if(!cacheCronograma) cacheCronograma = [];
+      cacheCronograma = cacheCronograma.filter(c=>c.id!==cr.id).concat([{ ...cr, _atrasado: cr.fecha!==planFechaActual }]);
+    }
+  }
+  // El registro de Monitoreo (datos ya verificados: cantidad producida, paradas,
+  // etc.) también hay que agregarlo si es de otra fecha, si no, se perdería y
+  // se crearía uno nuevo en blanco al abrirlo.
+  if(!(cacheRegistro||[]).some(r=>r.cronograma_id===reg.cronograma_id)){
+    if(!cacheRegistro) cacheRegistro = [];
+    cacheRegistro.push(reg);
+  }
   MonState.tab = 'produccion';
   MonState.selId = reg.cronograma_id;
   setActiveTab('produccion');
@@ -6430,6 +6554,13 @@ async function monRegToggleLocked(){
   if(cacheRegistro){
     const r = cacheRegistro.find(x=>x.cronograma_id===reg.cronograma_id);
     if(r) r.locked = nuevoValor;
+  }
+  if(!nuevoValor && reg.cronograma_id){
+    // Se está reabriendo: avisa a Planificación que queda pendiente de revisar
+    // otra vez, para que no se pierda de vista al cambiar de fecha en Monitoreo.
+    await sb.from('cronograma').update({ estado_verificacion:'revisar' }).eq('id', reg.cronograma_id);
+    const cr = (cacheCronograma||[]).find(c=>c.id===reg.cronograma_id);
+    if(cr) cr.estado_verificacion = 'revisar';
   }
   cacheRegistroTodo = null; // invalidar caché de Indicadores: cambió qué registros están "cerrados"
   // Al cerrar, la cantidad rechazada/no conforme se descuenta del Kardex de ese lote
