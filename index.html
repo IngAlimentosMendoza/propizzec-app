@@ -6,6 +6,7 @@
 <title>PROPIZZEC · Sistema de Producción</title>
 <link rel="manifest" href="data:application/json;base64,eyJuYW1lIjoiUFJPUElaWkVDIn0=">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -464,6 +465,35 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
   cursor:pointer;box-shadow:0 1px 3px rgba(15,23,42,.05);transition:box-shadow .15s ease,border-color .15s ease;
 }
 .sel-pendiente-card:hover{border-color:var(--materia);box-shadow:0 3px 10px rgba(15,23,42,.08);}
+/* ---------------- Entregas: calendario semanal ---------------- */
+.ent-toolbar{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+.ent-toolbar-left{display:flex;align-items:baseline;}
+.ent-toolbar-right{display:flex;gap:8px;flex-wrap:wrap;}
+.ent-calendar-wrap{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 170px);border:1px solid var(--line);border-radius:var(--radius);background:var(--card);}
+.ent-calendar{display:grid;grid-template-columns:64px repeat(7,minmax(160px,1fr));min-width:1190px;position:relative;}
+.ent-corner{position:sticky;top:0;left:0;z-index:3;background:var(--card);border-bottom:1px solid var(--line);border-right:1px solid var(--line);}
+.ent-daycol-header{position:sticky;top:0;z-index:2;background:#F8FAFC;border-bottom:1px solid var(--line);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;}
+.ent-daycol-header .ent-dayname{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;}
+.ent-daycol-header .ent-daynum{font-size:13px;font-weight:700;color:var(--ink);}
+.ent-daycol-header.ent-finde{background:#E2E8F0;}
+.ent-daycol-header.ent-hoy{background:rgba(37,99,235,.12);}
+.ent-daycol-header.ent-hoy .ent-daynum{color:var(--datos);}
+.ent-hour-label{grid-column:1;position:sticky;left:0;z-index:2;background:var(--card);font-size:10.5px;color:var(--muted);text-align:right;padding:2px 8px 0 0;border-right:1px solid var(--line);border-top:1px solid var(--line);}
+.ent-hour-label.ent-hora-compacta{font-size:8px;padding-top:0;opacity:.55;overflow:hidden;}
+.badge-completado{background:var(--ok);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;}
+.ent-daycol{position:relative;border-right:1px solid var(--line);background:#fff;}
+.ent-daycol.ent-finde{background:#F1F5F9;}
+.ent-hourline{position:absolute;left:0;right:0;border-top:1px solid var(--line);height:0;}
+.ent-events{position:absolute;inset:0;}
+/* Tarjeta de entrega: pestaña superior (tono más oscuro del color elegido, del ancho de la tarjeta) + cuerpo con cliente, OC y hora, una por línea */
+.ent-card{position:absolute;border-radius:9px;overflow:hidden;cursor:pointer;z-index:1;color:#fff;
+  background:var(--c);box-shadow:0 2px 6px rgba(0,0,0,.28);display:flex;flex-direction:column;}
+.ent-card-tab{flex:0 0 auto;height:19px;background:var(--cd);display:flex;align-items:center;justify-content:center;
+  font-size:10px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;box-shadow:inset 0 -2px 3px rgba(0,0,0,.22);}
+.ent-card-body{flex:1 1 auto;padding:5px 8px 6px;font-size:11px;line-height:1.3;overflow:hidden;}
+.ent-card-body b{display:block;font-size:11.5px;font-weight:700;white-space:normal;word-break:break-word;margin-bottom:2px;}
+.ent-card-body span{display:block;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .machine-card{
   background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;
   display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden;
@@ -528,10 +558,11 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="etiquetado" onclick="goModule('etiquetado')"><span class="ic">🏷️</span> Etiquetado</button>
     <button class="side-item" data-mod="monitoreo" onclick="goModule('monitoreo')"><span class="ic">📊</span> Monitoreo</button>
     <button class="side-item" data-mod="calidad" onclick="goModule('calidad')"><span class="ic">🔬</span> Calidad</button>
+    <button class="side-item" data-mod="entregas" onclick="goModule('entregas')"><span class="ic">📅</span> Entregas</button>
     <button class="side-item" data-mod="indicadores" onclick="goModule('indicadores')"><span class="ic">📈</span> Indicadores</button>
     <button class="side-item" data-mod="sellado" onclick="goModule('sellado')"><span class="ic">📦</span> Sellado</button>
     <button class="side-item" data-mod="bodega" onclick="goModule('bodega')"><span class="ic">🏬</span> Bodega</button>
-    <button class="side-item" data-mod="despacho" onclick="goModule('despacho')"><span class="ic">🚚</span> Despacho</button>
+    <button class="side-item" data-mod="despacho" onclick="goModule('despacho')"><span class="ic">🚚</span> Logística</button>
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot"><button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button></div>
   </nav>
@@ -548,6 +579,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 const SUPABASE_URL = 'https://ikorijjcpuywlztnhmzv.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imlrb3JpampjcHV5d2x6dG5obXp2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM4NTA4ODgsImV4cCI6MjA4OTQyNjg4OH0.5JdIhHYyOhW57NlgYw0Ma4dqMMTh6aioJmbjmnM9iLo';
 let sb = null;
+if(window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
 try{ sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 catch(e){ console.error('No se pudo iniciar Supabase', e); }
 
@@ -2326,10 +2358,11 @@ const MODULES = {
   etiquetado:   { label:'Etiquetado',    color:'--traza',      subs:['Actividad','Registros'] },
   monitoreo:    { label:'Monitoreo',     color:'--datos',      subs:['Producción Operativa','Calidad Operativa'] },
   calidad:      { label:'Calidad',       color:'--calidad',    subs:['Desperdicios','Cuarentena'] },
+  entregas:     { label:'Entregas',      color:'--paradas',    subs:['Calendario semanal'] },
   indicadores:  { label:'Indicadores',   color:'--calidad',    subs:['KPI Producción','KPI Sellado'] },
-  sellado:      { label:'Sellado',       color:'--materia',    subs:['Actividades','Registros'] },
+  sellado:      { label:'Sellado',       color:'--materia',    subs:['Actividades','Control de despacho','Registros'] },
   bodega:       { label:'Bodega',        color:'--traza',      subs:['Recepción','Registros'] },
-  despacho:     { label:'Despacho',      color:'--paradas',    subs:['Liberación de producto','Registros'] },
+  despacho:     { label:'Logística',      color:'--paradas',    subs:['Despachos','Liberación de producto','Registros'] },
   configuracion:{ label:'Configuración', color:'--muted',      subs:['Catálogos','Horarios','Usuarios'] },
 };
 let currentModule = 'inventario';
@@ -2340,10 +2373,10 @@ const ROLE_PERMISSIONS = {
   'ACONDICIONAMIENTO 1': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 1', defaultModulo:'planificacion' },
   'ACONDICIONAMIENTO 2': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 2', defaultModulo:'planificacion' },
   'ACONDICIONAMIENTO 3': { modulos:['inventario','planificacion','configuracion'], soloKardex:true, planArea:'ACONDICIONAMIENTO 3', defaultModulo:'planificacion' },
-  'SELLADO':             { modulos:['inventario','sellado','configuracion'], soloKardex:true, defaultModulo:'sellado' },
+  'SELLADO':             { modulos:['inventario','sellado','entregas','configuracion'], soloKardex:true, defaultModulo:'sellado' },
   'ETIQUETADO':          { modulos:['inventario','etiquetado','configuracion'], soloKardex:true, defaultModulo:'etiquetado' },
   'BODEGA':              { modulos:['inventario','bodega','configuracion'], soloKardex:true, defaultModulo:'bodega' },
-  'LOGISTICA':           { modulos:['inventario','despacho','configuracion'], soloKardex:true, defaultModulo:'despacho' },
+  'LOGISTICA':           { modulos:['inventario','despacho','entregas','configuracion'], soloKardex:true, defaultModulo:'despacho' },
   'MANTENIMIENTO':       { enConstruccion:true }
 };
 function getRolePermiso(area){ return ROLE_PERMISSIONS[area] || null; }
@@ -2411,6 +2444,7 @@ function renderModule(mod){
   if(mod === 'etiquetado'){ renderEtiquetado(); return; }
   if(mod === 'monitoreo'){ renderMonitoreo(); return; }
   if(mod === 'calidad'){ renderCalidad(); return; }
+  if(mod === 'entregas'){ renderEntregas(); return; }
   if(mod === 'indicadores'){ renderIndicadores(); return; }
   if(mod === 'sellado'){ renderSellado(); return; }
   if(mod === 'bodega'){ renderBodega(); return; }
@@ -2442,7 +2476,21 @@ let currentModalHook = null; // función a ejecutar en vez de restaurar la venta
 function openModal(html, onClose){
   const bg = document.getElementById('modalBg');
   if(bg.classList.contains('show')){
-    modalStack.push({ html: document.getElementById('modalPanel').innerHTML, hook: currentModalHook });
+    const panel = document.getElementById('modalPanel');
+    // Antes de "fotografiar" el modal actual para poder volver a él después,
+    // se copia lo que el usuario ya haya escrito/elegido en cada campo hacia
+    // el propio HTML — porque el innerHTML normal NO refleja lo que se
+    // escribió a mano (solo lo que había al crear el campo), y por eso al
+    // abrir una ventanita encima y volver, se perdía todo lo demás.
+    panel.querySelectorAll('input').forEach(el=>{
+      if(el.type==='checkbox' || el.type==='radio'){ if(el.checked) el.setAttribute('checked',''); else el.removeAttribute('checked'); }
+      else el.setAttribute('value', el.value);
+    });
+    panel.querySelectorAll('textarea').forEach(el=>{ el.textContent = el.value; });
+    panel.querySelectorAll('select').forEach(sel=>{
+      Array.from(sel.options).forEach(opt=>{ opt.toggleAttribute('selected', opt.value===sel.value); });
+    });
+    modalStack.push({ html: panel.innerHTML, hook: currentModalHook });
   }
   currentModalHook = onClose || null;
   document.getElementById('modalPanel').innerHTML = `<button class="mclose" onclick="closeModal()">✕</button>${html}`;
@@ -2533,14 +2581,15 @@ let cacheTipos = null;        // tipos_item
 let cacheMedidas = null;      // medidas
 let cacheFormulacion = null;  // filas planas de formulacion (join manual con items)
 
+function normalizarCodigo(c){ return (c||'').toString().trim(); }
 async function invLoad(force){
   if(!sb) return;
   const tasks = [];
-  if(force || !cacheItems)       tasks.push(sb.from('items').select('*').order('codigo').then(r=>cacheItems=r.data||[]));
+  if(force || !cacheItems)       tasks.push(sb.from('items').select('*').order('codigo').then(r=>cacheItems=(r.data||[]).map(i=>({...i, codigo:normalizarCodigo(i.codigo)}))));
   if(force || !cacheStock)       tasks.push(sb.from('v_kardex_stock').select('*').then(r=>cacheStock=r.data||[]));
   if(force || !cacheTipos)       tasks.push(sb.from('tipos_item').select('*').eq('activo',true).order('etiqueta').then(r=>cacheTipos=r.data||[]));
   if(force || !cacheMedidas)     tasks.push(sb.from('medidas').select('*').eq('activo',true).order('nombre').then(r=>cacheMedidas=r.data||[]));
-  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').order('cod_producto_principal').then(r=>cacheFormulacion=r.data||[]));
+  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').order('cod_producto_principal').then(r=>cacheFormulacion=(r.data||[]).map(f=>({...f, cod_producto_principal:normalizarCodigo(f.cod_producto_principal), cod_componente:normalizarCodigo(f.cod_componente)}))));
   await Promise.all(tasks);
 }
 
@@ -3436,7 +3485,16 @@ async function saveFormulacion(){
   if(error){ toast('Error al guardar: ' + error.message); return; }
   closeModal();
   await invLoad(true);
-  toast('Formulación guardada');
+  // Las órdenes de este producto que ya existan y todavía no se hayan
+  // aprobado en Monitoreo se sincronizan solas con la fórmula nueva — no hace
+  // falta ir a Cronograma a actualizarlas una por una.
+  const resumenSync = await crSincronizarTodasLasOrdenesDeFormula(formProducto.codigo);
+  let msg = 'Formulación guardada';
+  if(resumenSync && (resumenSync.agregados || resumenSync.quitados)){
+    msg += ` — se actualizaron ${resumenSync.ordenes} orden(es) ya creada(s): ${resumenSync.agregados} ingrediente(s) agregado(s), ${resumenSync.quitados} quitado(s)`;
+    if(resumenSync.conDatos) msg += `. ${resumenSync.conDatos} no se pudo(eron) quitar porque ya tenía(n) consumo registrado — revísalo(s) a mano si hace falta`;
+  }
+  toast(msg);
   renderFormulacionTab();
 }
 
@@ -3477,8 +3535,9 @@ let pmMostrarTodos = false;
 async function planLoad(force){
   if(!sb) return;
   const tasks = [];
-  if(force || !cacheItems)   tasks.push(sb.from('items').select('*').order('codigo').then(r=>cacheItems=r.data||[]));
-  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=r.data||[]));
+  if(force || !cacheItems)   tasks.push(sb.from('items').select('*').order('codigo').then(r=>cacheItems=(r.data||[]).map(i=>({...i, codigo:normalizarCodigo(i.codigo)}))));
+  if(force || !cacheTipos)   tasks.push(sb.from('tipos_item').select('*').eq('activo',true).order('etiqueta').then(r=>cacheTipos=r.data||[]));
+  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=(r.data||[]).map(f=>({...f, cod_producto_principal:normalizarCodigo(f.cod_producto_principal), cod_componente:normalizarCodigo(f.cod_componente)}))));
   if(force || !cacheMedidas) tasks.push(sb.from('medidas').select('*').eq('activo',true).order('nombre').then(r=>cacheMedidas=r.data||[]));
   if(force || !cacheCatalogosPlan) tasks.push(sb.from('catalogos').select('*').eq('activo',true).then(r=>cacheCatalogosPlan=r.data||[]));
   if(force || !cachePersonalPlanificacion) tasks.push(sb.from('personal_planificacion').select('*').eq('activo',true).order('nombre').then(r=>cachePersonalPlanificacion=r.data||[]));
@@ -3663,34 +3722,81 @@ async function kardexEscribirProduccionTeorica(row){
   });
   return { error: error||null };
 }
+// Crea una orden con sus ingredientes (filtrados igual que en Cronograma) y su
+// entrada teórica en Kardex. Si algún ingrediente es a su vez un producto con
+// fórmula propia (ej. la masa dentro de los discos), se crea también SU propia
+// orden automáticamente, con la cantidad que la fórmula indica que se necesita
+// — y así sucesivamente si hubiera más niveles.
+// Crea una orden con sus ingredientes (filtrados igual que en Cronograma), su
+// entrada teórica en Kardex, y — si algún ingrediente es a su vez un producto
+// con fórmula propia (ej. la masa dentro de los discos) — crea también SU
+// propia orden, vinculada como "padre" a esta, con la cantidad que la fórmula
+// indica que se necesita. Cada preparación previa sigue siendo 100%
+// independiente (su propio registro en Monitoreo, su propio Kardex) — el
+// vínculo solo sirve para mostrarlas juntas en la misma pantalla.
+// La creación automática de preparaciones previas solo aplica cuando el
+// producto que se está creando es un disco, una lasaña o un stick. En las
+// pizzas no: ahí el disco se produce por su cuenta, en su propia orden, y la
+// pizza solo lo consume.
+function productoGeneraPreparaciones(itemCodigo){
+  const item = (cacheItems||[]).find(i=>i.codigo===itemCodigo);
+  const nombre = normalizaNombre(item ? item.nombre : '');
+  return /DISCO|LASA[ÑN]|STICK/.test(nombre);
+}
+async function crCrearOrdenConIngredientes(itemCodigo, cantidad, fecha, area, ordenPadreId, permitirCascada){
+  const generaPrep = (permitirCascada===undefined) ? productoGeneraPreparaciones(itemCodigo) : permitirCascada;
+  const op = await nextOP();
+  const { data, error } = await sb.from('cronograma').insert({
+    fecha, area, item_codigo: itemCodigo, cantidad_programada: cantidad,
+    orden_produccion: op, estado:'pendiente', lote: ddMMyy(fecha), orden_padre_id: ordenPadreId||null
+  }).select().single();
+  if(error){ toast('Error: ' + error.message); return null; }
+  const ingredientesFormula = (cacheFormulacion||[]).filter(f=>{
+    if(f.cod_producto_principal!==itemCodigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return esIngredienteDeCronograma(compItem);
+  });
+  if(ingredientesFormula.length){
+    const rows = ingredientesFormula.map(f=>({ cronograma_id: data.id, item_codigo: f.cod_componente }));
+    await sb.from('cronograma_ingredientes').insert(rows);
+  }
+  await kardexEscribirProduccionTeorica(data);
+  const preparacionesCreadas = [];
+  for(const f of ingredientesFormula){
+    if(generaPrep && productoTieneFormulaPropia(f.cod_componente)){
+      const cantidadSub = pfCantidadTeorica({ item_codigo: itemCodigo, cantidad_programada: cantidad, cantidad_real:null }, f.cod_componente);
+      if(cantidadSub>0){
+        const subItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+        const subResultado = await crCrearOrdenConIngredientes(f.cod_componente, cantidadSub, fecha, area, data.id, true);
+        if(subResultado){
+          preparacionesCreadas.push({ codigo:f.cod_componente, nombre: subItem?subItem.nombre:f.cod_componente, cantidad: cantidadSub, orden: subResultado.orden_produccion });
+          if(subResultado._preparacionesCreadas) preparacionesCreadas.push(...subResultado._preparacionesCreadas);
+        }
+      }
+    }
+  }
+  data._preparacionesCreadas = preparacionesCreadas;
+  return data;
+}
 async function crConfirmAdd(codigo){
   const cant = parseFloat((document.getElementById('crCantProg').value||'0').replace(',','.')) || 0;
   const areaSel = document.getElementById('crAreaDesignada');
   const area = areaSel ? areaSel.value : (sessionStorage.getItem('propizzec_area') || null);
-  const op = await nextOP();
-  const { data, error } = await sb.from('cronograma').insert({
-    fecha: planFechaActual, area, item_codigo: codigo, cantidad_programada: cant,
-    orden_produccion: op, estado:'pendiente', lote: ddMMyy(planFechaActual)
-  }).select().single();
-  if(error){ toast('Error: ' + error.message); return; }
-  const ingredientes = (cacheFormulacion||[]).filter(f=>{
-    if(f.cod_producto_principal!==codigo) return false;
-    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    return esIngredienteDeCronograma(compItem); // Materia Prima + los ME que no requieren etiquetado
-  });
-  if(ingredientes.length){
-    const rows = ingredientes.map(f=>({ cronograma_id: data.id, item_codigo: f.cod_componente }));
-    await sb.from('cronograma_ingredientes').insert(rows);
-  }
-  await kardexEscribirProduccionTeorica(data);
+  const resultado = await crCrearOrdenConIngredientes(codigo, cant, planFechaActual, area, null);
+  if(!resultado) return;
   await invLoad(true);
   closeModal();
   await planLoad(true);
-  toast('Orden ' + op + ' agregada');
+  let msg = 'Orden ' + resultado.orden_produccion + ' agregada';
+  if(resultado._preparacionesCreadas && resultado._preparacionesCreadas.length){
+    msg += ' — también se creó: ' + resultado._preparacionesCreadas.map(s=>`${s.nombre} (${fmtNum(s.cantidad)}) orden ${s.orden}`).join(', ');
+  }
+  toast(msg);
   renderCronogramaTab();
 }
-async function deleteCronogramaRow(id){
-  if(!confirm('¿Eliminar esta orden del cronograma? También se eliminará su información relacionada en Kardex.')) return;
+// Elimina UNA orden y todo lo que le pertenece en Kardex (producción propia +
+// consumo de sus ingredientes) — sin tocar a sus hijas ni a su padre.
+async function crEliminarOrdenYSuKardex(id){
   const row = (cacheCronograma||[]).find(c=>c.id===id);
   if(row && row.orden_produccion){
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'PRODUCCION N° ' + row.orden_produccion);
@@ -3698,15 +3804,74 @@ async function deleteCronogramaRow(id){
   }
   if(row){
     for(const ci of (row.cronograma_ingredientes||[])){
-      await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ci.id);
+      await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(row.orden_produccion, ci.item_codigo, ci.id));
     }
   }
-  const { error } = await sb.from('cronograma').delete().eq('id', id);
-  if(error){ toast('Error: ' + error.message); return; }
+  await sb.from('cronograma').delete().eq('id', id);
+}
+async function deleteCronogramaRow(id){
+  const row = (cacheCronograma||[]).find(c=>c.id===id);
+  // Si esta orden tiene preparaciones previas vinculadas (ej. la masa de los
+  // discos, o la bechamel/boloñesa de la lasaña), esas también se eliminan —
+  // porque no tendría sentido dejarlas sueltas sin la orden principal que las
+  // necesitaba (incluye varios niveles, por si una preparación a su vez tiene
+  // otra debajo). Si en cambio se elimina solo un INGREDIENTE suelto (el ✕ de
+  // la fila del ingrediente), eso NO borra la producción relacionada — solo
+  // quita esa línea, tal como ya funciona.
+  const hijas = crRecolectarDescendientes(id);
+  // Si esa orden (o alguna de sus preparaciones) ya se despachó, no se puede eliminar.
+  for(const o of [row, ...hijas]){
+    if(!o) continue;
+    const bloqueo = await despMensajeBloqueoLote(o.item_codigo, o.lote);
+    if(bloqueo){ alert(bloqueo); return; }
+  }
+  const confirmMsg = hijas.length
+    ? '¿Eliminar esta orden del cronograma? También se eliminarán sus ' + hijas.length + ' preparación(es) previa(s) vinculada(s) (' + hijas.map(h=>h.orden_produccion).join(', ') + ') y toda su información relacionada en Kardex.'
+    : '¿Eliminar esta orden del cronograma? También se eliminará su información relacionada en Kardex.';
+  if(!confirm(confirmMsg)) return;
+  for(const hija of hijas){
+    await crEliminarOrdenYSuKardex(hija.id);
+  }
+  await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   await Promise.all([planLoad(true), invLoad(true)]);
-  toast('Orden eliminada, junto con su información de Kardex');
+  toast('Orden eliminada' + (hijas.length ? (', junto con ' + hijas.length + ' preparación(es) previa(s)') : '') + ' y su información de Kardex');
   renderCronogramaTab();
+}
+function crRecolectarDescendientes(id){
+  const directas = (cacheCronograma||[]).filter(c=>c.orden_padre_id===id);
+  let todas = directas.slice();
+  for(const hija of directas){
+    todas = todas.concat(crRecolectarDescendientes(hija.id));
+  }
+  return todas;
+}
+// Toda la "familia" de una orden (la principal + todas sus preparaciones
+// previas, sin importar el nivel), EXCLUYENDO a la propia orden.
+function crFamiliaDe(rowId){
+  const row = (cacheCronograma||[]).find(c=>c.id===rowId);
+  if(!row) return [];
+  const raizId = row.orden_padre_id || row.id;
+  const raiz = (cacheCronograma||[]).find(c=>c.id===raizId);
+  const familia = raiz ? [raiz, ...crRecolectarDescendientes(raizId)] : [];
+  return familia.filter(f=>f.id!==rowId);
+}
+// Actualiza un campo COMPARTIDO (responsable, hora_inicio, hora_fin) y lo
+// propaga a toda la familia — pero SOLO a los miembros cuyo valor actual
+// coincide con el que tenía este ANTES del cambio (es decir, que seguían
+// sincronizados); si alguno ya se editó distinto a propósito en su propia
+// ventana, se deja tal cual, sin pisarlo.
+async function crActualizarCampoCompartido(id, field, value){
+  const row = (cacheCronograma||[]).find(c=>c.id===id);
+  const valorAnterior = row ? row[field] : undefined;
+  await planUpdateField(id, field, value);
+  if(!row) return;
+  for(const miembro of crFamiliaDe(id)){
+    if(miembro[field] === valorAnterior){
+      await sb.from('cronograma').update({ [field]: value }).eq('id', miembro.id);
+      miembro[field] = value;
+    }
+  }
 }
 // Campos obligatorios para poder finalizar (todo excepto Observaciones,
 // Paradas y Merma, que tienen valores por defecto y no bloquean).
@@ -3878,6 +4043,29 @@ function pmHoraIngresoSugerida(row){
   if(dif >= 0 && dif <= PM_MARGEN_INICIO_MIN) return inicio;
   return ahora;
 }
+// El personal se comparte entre toda la familia (la producción principal y
+// sus preparaciones previas) — si entra o sale alguien en una, se refleja en
+// las demás también, porque normalmente es el mismo equipo trabajando en
+// todas. "Quitar" (pmRemove) es la única acción que se queda solo en esa
+// orden, a propósito.
+async function crPropagarPersonalAgregar(nombre, area, horaIngreso){
+  for(const miembro of crFamiliaDe(currentPersonalCronoId)){
+    if(!miembro.cronograma_personal) miembro.cronograma_personal = [];
+    const yaActivo = miembro.cronograma_personal.some(p=>p.nombre===nombre && !p.hora_salida);
+    if(yaActivo) continue;
+    const { data, error } = await sb.from('cronograma_personal').insert({ cronograma_id: miembro.id, nombre, area: miembro.area||area, hora_ingreso: horaIngreso }).select().single();
+    if(!error) miembro.cronograma_personal.push(data);
+  }
+}
+async function crPropagarPersonalSalida(nombre, horaSalida){
+  for(const miembro of crFamiliaDe(currentPersonalCronoId)){
+    const activo = (miembro.cronograma_personal||[]).find(p=>p.nombre===nombre && !p.hora_salida);
+    if(activo){
+      await sb.from('cronograma_personal').update({hora_salida: horaSalida}).eq('id', activo.id);
+      activo.hora_salida = horaSalida;
+    }
+  }
+}
 async function pmToggle(nombre, checked){
   const row = (cacheCronograma||[]).find(c=>c.id===currentPersonalCronoId);
   if(!row) return;
@@ -3888,12 +4076,14 @@ async function pmToggle(nombre, checked){
     const { data, error } = await sb.from('cronograma_personal').insert({ cronograma_id: currentPersonalCronoId, nombre, area, hora_ingreso: hm }).select().single();
     if(error){ toast('Error: '+error.message); return; }
     row.cronograma_personal.push(data);
+    await crPropagarPersonalAgregar(nombre, area, hm);
   } else {
     const activo = row.cronograma_personal.find(p=>p.nombre===nombre && !p.hora_salida);
     if(activo){
       const hm = nowHM();
       await sb.from('cronograma_personal').update({hora_salida: hm}).eq('id', activo.id);
       activo.hora_salida = hm;
+      await crPropagarPersonalSalida(nombre, hm);
     }
   }
   renderPersonalList();
@@ -3915,6 +4105,7 @@ async function pmDesdeInicio(nombre){
     if(!row.cronograma_personal) row.cronograma_personal=[];
     row.cronograma_personal.push(data);
   }
+  await crPropagarPersonalAgregar(nombre, area, horaInicioProd);
   renderPersonalList();
   const cnt = document.getElementById('pfPersonalCount');
   if(cnt) cnt.value = row.cronograma_personal.filter(p=>!p.hora_salida).length;
@@ -4058,7 +4249,7 @@ async function pfDetenerParada(id, cronogramaId){
   pfLoadParadasSection(cronogramaId);
 }
 /* ---------------- Modal de producción (ventana emergente por producto) ---------------- */
-function openCronogramaFormBloqueado(row, item){
+function openCronogramaFormBloqueado(row, item, motivoDespacho){
   const cant = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
   const ingredientes = (row.cronograma_ingredientes||[]);
   // El personal se guarda como historial (cada entrada/salida crea su propio
@@ -4082,7 +4273,7 @@ function openCronogramaFormBloqueado(row, item){
       <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
     </div>
     <div class="readonly-box" style="margin-bottom:14px;background:rgba(5,150,105,.08);border-color:var(--ok);">
-      🔒 <b>Esta orden ya fue verificada y aprobada en Monitoreo.</b> Para corregir algo, primero hay que usar "↩ Volver a verificar" desde Monitoreo.
+      🔒 ${motivoDespacho ? ('<b>'+escHtml(motivoDespacho)+'</b>') : '<b>Esta orden ya fue verificada y aprobada en Monitoreo.</b> Para corregir algo, primero hay que usar "↩ Volver a verificar" desde Monitoreo.'}
     </div>
     <div class="pf-row">
       <div class="field"><label>${escHtml(row.item_codigo)} — Producto</label><input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled></div>
@@ -4119,7 +4310,31 @@ function openCronogramaFormBloqueado(row, item){
     </div>
   `);
 }
+// La orden "raíz" de cualquier ingrediente: si esa orden es una preparación
+// previa (tiene orden_padre_id), la raíz es la orden principal — así, al
+// terminar de elegir un lote o ingresar una cantidad, siempre se vuelve a la
+// pantalla unificada, sin importar si el ingrediente era de la orden
+// principal o de una de sus preparaciones previas.
+function crIdRaiz(cronogramaId){
+  const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
+  if(!row) return cronogramaId;
+  return row.orden_padre_id || row.id;
+}
+// Antes de abrir el formulario de una orden, se revisa si su producto+lote ya
+// se despachó: si es así, se abre solo en modo lectura con el motivo.
 function openCronogramaForm(id){
+  const row = (cacheCronograma||[]).find(c=>c.id===id);
+  if(!row) return;
+  despMensajeBloqueoLote(row.item_codigo, row.lote || ddMMyy(row.fecha)).then(m=>{
+    if(m){
+      const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
+      openCronogramaFormBloqueado(row, item, m);
+    } else {
+      openCronogramaFormNormal(id);
+    }
+  });
+}
+function openCronogramaFormNormal(id){
   const row = (cacheCronograma||[]).find(c=>c.id===id);
   if(!row) return;
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
@@ -4170,14 +4385,14 @@ function openCronogramaForm(id){
       <div class="field">
         <label>Hora de inicio</label>
         <div style="display:flex;gap:8px;">
-          <input type="time" id="pfHoraInicio" value="${row.hora_inicio||''}" onchange="planUpdateField('${id}','hora_inicio',this.value)" style="flex:1;">
+          <input type="time" id="pfHoraInicio" value="${row.hora_inicio||''}" onchange="crActualizarCampoCompartido('${id}','hora_inicio',this.value)" style="flex:1;">
           <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_inicio')">Inicio</button>
         </div>
       </div>
       <div class="field">
         <label>Hora de fin</label>
         <div style="display:flex;gap:8px;">
-          <input type="time" id="pfHoraFin" value="${row.hora_fin||''}" onchange="planUpdateField('${id}','hora_fin',this.value)" style="flex:1;">
+          <input type="time" id="pfHoraFin" value="${row.hora_fin||''}" onchange="crActualizarCampoCompartido('${id}','hora_fin',this.value)" style="flex:1;">
           <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_fin')">Fin</button>
         </div>
       </div>
@@ -4201,6 +4416,7 @@ function openCronogramaForm(id){
       <label>Ingredientes (formulación)</label>
       <div id="pfIngList"></div>
     </div>
+    <div id="pfPreparaciones"></div>
 
     <div class="pf-row">
       <div class="field">
@@ -4257,6 +4473,34 @@ function openCronogramaForm(id){
   `);
   pfRenderIngredientes(id);
   pfLoadParadasSection(id);
+  pfRenderPreparaciones(id);
+}
+// Muestra, debajo de los ingredientes de la orden principal, una sección por
+// cada preparación previa vinculada (ej. Masa dentro de Discos) — cada una es
+// una orden 100% independiente (su propio registro en Monitoreo, su propio
+// Kardex), solo se muestran juntas aquí para no tener que ir y venir.
+function pfRenderPreparaciones(cronogramaId, containerId){
+  const wrap = document.getElementById(containerId || 'pfPreparaciones');
+  if(!wrap) return;
+  const hijas = (cacheCronograma||[]).filter(c=>c.orden_padre_id===cronogramaId);
+  if(!hijas.length){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = hijas.map(h=>{
+    const item = (cacheItems||[]).find(i=>i.codigo===h.item_codigo);
+    const cant = h.cantidad_real!=null ? h.cantidad_real : h.cantidad_programada;
+    return `
+      <div class="sel-section-title" style="margin-top:18px;">🔗 Preparación previa: ${escHtml(item?item.nombre:h.item_codigo)}</div>
+      <div class="sub" style="margin-top:-6px;">Orden ${escHtml(h.orden_produccion||'')} · Lote ${escHtml(h.lote||'')} · ${fmtNum(cant)} ${escHtml(item?item.medida:'')} — es una orden independiente, con su propia aprobación en Monitoreo.</div>
+      <div class="field">
+        <label>Ingredientes de ${escHtml(item?item.nombre:h.item_codigo)}</label>
+        <div id="pfIngList_${h.id}"></div>
+      </div>
+      <div id="pfPreparaciones_${h.id}"></div>
+    `;
+  }).join('');
+  hijas.forEach(h=>{
+    pfRenderIngredientes(h.id, 'pfIngList_'+h.id);
+    pfRenderPreparaciones(h.id, 'pfPreparaciones_'+h.id); // por si esa preparación a su vez tiene otra debajo (niveles múltiples)
+  });
 }
 function crCambiarProducto(id){
   openModal(`
@@ -4290,7 +4534,7 @@ async function crConfirmCambioProducto(id, codigo){
   // tanto ya se había descontado del Kardex), hay que revertir ese descuento
   // antes de reemplazar la lista de ingredientes por la del nuevo producto.
   for(const ci of (row.cronograma_ingredientes||[])){
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ci.id);
+    await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(row.orden_produccion, ci.item_codigo, ci.id));
   }
   await sb.from('cronograma_ingredientes').delete().eq('cronograma_id', id);
   const nuevaFormula = (cacheFormulacion||[]).filter(f=>{
@@ -4329,6 +4573,10 @@ async function crActualizarCantidadReal(id, valorTxt){
     const { error } = await kardexEscribirProduccionTeorica(row);
     if(error) toast('Se guardó la cantidad, pero hubo un error al actualizar el Kardex: ' + error.message);
     await invLoad(true);
+    // Se refresca SOLO la lista de ingredientes de esta orden (la teórica
+    // depende de esta cantidad) — sin recargar toda la ventana, para no
+    // perder nada que se esté escribiendo en otros campos del formulario.
+    pfRenderIngredientes(id, crTargetIdIngredientes(id));
   }
 }
 async function pfAddMotivoMerma(id){
@@ -4342,7 +4590,7 @@ async function pfAddMotivoMerma(id){
   toast('Motivo agregado');
 }
 async function planPickResponsable(id, nombre){
-  await planUpdateField(id, 'responsable', nombre);
+  await crActualizarCampoCompartido(id, 'responsable', nombre);
   const existe = (cacheCatalogosPlan||[]).some(c=>c.tipo==='responsable_mp' && c.nombre===nombre);
   if(nombre && !existe){
     await sb.from('catalogos').insert({ tipo:'responsable_mp', nombre });
@@ -4352,7 +4600,7 @@ async function planPickResponsable(id, nombre){
 }
 async function crMarcarHora(id, field){
   const hm = nowHM();
-  await planUpdateField(id, field, hm);
+  await crActualizarCampoCompartido(id, field, hm);
   const el = document.getElementById(field==='hora_inicio'?'pfHoraInicio':'pfHoraFin');
   if(el) el.value = hm;
   if(field === 'hora_fin'){
@@ -4390,10 +4638,11 @@ function pfCantidadTeorica(row, itemCodigoComponente){
   return Math.round(porUnidad * cantProducir * 10000)/10000;
 }
 const PF_RANGO_ACEPTABLE = 0.08; // ±8% entre lo real y lo teórico
-function pfRenderIngredientes(cronogramaId){
-  const wrap = document.getElementById('pfIngList');
+function pfRenderIngredientes(cronogramaId, targetId){
+  const wrap = document.getElementById(targetId || 'pfIngList');
   if(!wrap) return;
   const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
+  if(!row){ wrap.innerHTML = '<div class="empty-state">No se encontró la orden</div>'; return; }
   const ingredientes = (row.cronograma_ingredientes||[]);
   if(!ingredientes.length){ wrap.innerHTML = '<div class="empty-state" style="padding:14px;">Sin ingredientes en esta orden. Búscalos arriba para agregarlos.</div>'; return; }
   wrap.innerHTML = ingredientes.map(ci=>{
@@ -4448,6 +4697,51 @@ function crIngSearchInput(cronogramaId, q){
   const matches = (cacheItems||[]).filter(i=>i.activo && esIngredienteDeCronograma(i) && !already.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,20);
   results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="crIngAdd('${cronogramaId}','${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
+// Sincroniza los ingredientes de UNA orden con lo que diga la fórmula ahora
+// mismo — agrega los que falten, y quita los que ya no estén en la fórmula
+// PERO solo si no tienen nada registrado todavía (para no borrar consumo real
+// ya hecho). No toca la interfaz — devuelve un resumen de lo que cambió.
+async function crSincronizarIngredientesOrden(row){
+  const existentes = new Set((row.cronograma_ingredientes||[]).map(ci=>ci.item_codigo));
+  const formulaActual = (cacheFormulacion||[]).filter(f=>{
+    if(f.cod_producto_principal!==row.item_codigo) return false;
+    const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+    return esIngredienteDeCronograma(compItem);
+  });
+  const codigosFormula = new Set(formulaActual.map(f=>f.cod_componente));
+
+  const faltantes = formulaActual.filter(f=>!existentes.has(f.cod_componente));
+  if(faltantes.length){
+    const rows = faltantes.map(f=>({ cronograma_id: row.id, item_codigo: f.cod_componente }));
+    await sb.from('cronograma_ingredientes').insert(rows);
+  }
+
+  const sobrantesBorrables = (row.cronograma_ingredientes||[]).filter(ci=>!codigosFormula.has(ci.item_codigo) && ci.cantidad_consumida==null && !(ci.lotes_consumidos||[]).length);
+  for(const ci of sobrantesBorrables){
+    await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(row.orden_produccion, ci.item_codigo, ci.id));
+    await sb.from('cronograma_ingredientes').delete().eq('id', ci.id);
+  }
+  const sobrantesConDatos = (row.cronograma_ingredientes||[]).filter(ci=>!codigosFormula.has(ci.item_codigo) && !sobrantesBorrables.includes(ci));
+
+  return { agregados: faltantes.length, quitados: sobrantesBorrables.length, conDatos: sobrantesConDatos.length, orden: row.orden_produccion };
+}
+// Al guardar una fórmula, se sincronizan automáticamente las órdenes de ese
+// producto que estén cargadas en Cronograma en este momento (lo que se ve en
+// la fecha actual, más el arrastre de días anteriores sin finalizar) y que
+// aún no se hayan aprobado en Monitoreo — no busca en todo el histórico de la
+// base de datos, solo lo que está "en juego" ahora mismo. Las órdenes nuevas
+// que se creen después ya toman la fórmula actualizada por su cuenta.
+async function crSincronizarTodasLasOrdenesDeFormula(itemCodigo){
+  const ordenes = (cacheCronograma||[]).filter(c=>c.item_codigo===itemCodigo && c.estado_verificacion!=='aprobado');
+  if(!ordenes.length) return null;
+  let totalAgregados = 0, totalQuitados = 0, totalConDatos = 0;
+  for(const row of ordenes){
+    const r = await crSincronizarIngredientesOrden(row);
+    totalAgregados += r.agregados; totalQuitados += r.quitados; totalConDatos += r.conDatos;
+  }
+  await planLoad(true);
+  return { ordenes: ordenes.length, agregados: totalAgregados, quitados: totalQuitados, conDatos: totalConDatos };
+}
 async function crIngAdd(cronogramaId, codigo){
   const { error } = await sb.from('cronograma_ingredientes').insert({ cronograma_id: cronogramaId, item_codigo: codigo });
   if(error){ toast('Error: '+error.message); return; }
@@ -4457,15 +4751,28 @@ async function crIngAdd(cronogramaId, codigo){
   pfRenderIngredientes(cronogramaId);
   toast('Ingrediente agregado');
 }
+// Contenedor donde va la lista de ingredientes de una orden: si se está
+// viendo DENTRO de la ventana unificada de su producción principal, existe
+// su propia sección (pfIngList_<id>) y se usa esa; si se está viendo la
+// orden por su cuenta (su propia página, aunque tenga padre), se usa la
+// lista principal (pfIngList) — se decide mirando qué existe en pantalla en
+// este momento, no solo si la orden tiene o no un padre.
+function crTargetIdIngredientes(cronogramaId){
+  const nestedId = 'pfIngList_' + cronogramaId;
+  if(document.getElementById(nestedId)) return nestedId;
+  return 'pfIngList';
+}
 async function crIngDelete(ciId, cronogramaId){
   if(!confirm('¿Eliminar este ingrediente de la orden?')) return;
   // Si ese ingrediente ya tenía un lote elegido (y por lo tanto ya se había
   // descontado del Kardex), hay que revertir ese descuento antes de borrarlo.
-  await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + ciId);
+  const rowActual = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
+  const ciActual = rowActual ? (rowActual.cronograma_ingredientes||[]).find(x=>x.id===ciId) : null;
+  await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(rowActual?rowActual.orden_produccion:null, ciActual?ciActual.item_codigo:null, ciId));
   const { error } = await sb.from('cronograma_ingredientes').delete().eq('id', ciId);
   if(error){ toast('Error: '+error.message); return; }
   await Promise.all([planLoad(true), invLoad(true)]);
-  pfRenderIngredientes(cronogramaId);
+  pfRenderIngredientes(cronogramaId, crTargetIdIngredientes(cronogramaId));
   toast('Ingrediente eliminado y su Kardex revertido');
 }
 
@@ -4594,13 +4901,17 @@ async function confirmInicioFin(cronogramaIngId, cual){
   // inventario que descontar — su "cantidad_consumida" es solo un registro de
   // referencia de cuánto se usó, no afecta el Kardex.
   if(!sinLote && patch.lotes_consumidos !== undefined){
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'CONSUMO-ING-' + cronogramaIngId);
+    await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(rowActual?rowActual.orden_produccion:null, ciActual?ciActual.item_codigo:null, cronogramaIngId));
     await invLoad(true);
   }
-  await planLoad(true);
-  closeModalAll(); // se va a reabrir el modal de producción con datos frescos; evita dejar una versión vieja en la pila
-  const row = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
-  if(row) openCronogramaForm(row.id);
+  // Se actualiza el dato en memoria y solo se vuelve a dibujar la lista de
+  // ingredientes correspondiente — sin recargar toda la ventana, para no
+  // perder nada que se esté escribiendo en otros campos, y sin cambiar de
+  // pantalla (si esto se hizo en la página de una preparación previa, se
+  // queda ahí; si se hizo desde la vista unificada, también se queda ahí).
+  if(ciActual) Object.assign(ciActual, patch);
+  closeModal();
+  if(rowActual) pfRenderIngredientes(rowActual.id, crTargetIdIngredientes(rowActual.id));
 }
 
 /* ---------------- Selector de lotes (FIFO manual) ---------------- */
@@ -4676,19 +4987,27 @@ async function confirmLotes(cronogramaIngId){
   const row0 = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
   const ci0 = row0 && (row0.cronograma_ingredientes||[]).find(ci=>ci.id===cronogramaIngId);
   if(row0 && ci0){
-    const { error: errK } = await kardexEscribirIngredienteConsumo(cronogramaIngId, ci0.item_codigo, row0.fecha, seleccionados);
+    const { error: errK } = await kardexEscribirIngredienteConsumo(cronogramaIngId, ci0.item_codigo, row0.fecha, seleccionados, row0.orden_produccion);
     if(errK) toast('Se guardó el lote, pero hubo un error al descontar del Kardex: ' + errK.message);
+    ci0.lotes_consumidos = seleccionados; // se actualiza en memoria, sin recargar toda la ventana
   }
-  await Promise.all([planLoad(true), invLoad(true)]);
-  closeModalAll();
-  const row = (cacheCronograma||[]).find(c=>(c.cronograma_ingredientes||[]).some(ci=>ci.id===cronogramaIngId));
-  if(row) openCronogramaForm(row.id);
+  await invLoad(true); // refresca los saldos de Kardex (para los selectores de lote de otros ingredientes)
+  closeModal();
+  if(row0) pfRenderIngredientes(row0.id, crTargetIdIngredientes(row0.id));
+}
+// Genera el comprobante de consumo de un ingrediente de forma que el usuario
+// pueda leer de qué orden y qué ingrediente se trata (antes solo mostraba el
+// ID interno, que no dice nada). Sigue siendo único por ingrediente (el ID
+// interno va al final, oculto en la práctica), así que sirve igual para
+// reconciliar (borrar y volver a insertar) sin duplicar.
+function comprobanteConsumoIngrediente(ordenProduccion, itemCodigo, cronogramaIngId){
+  return 'CONSUMO ' + (ordenProduccion||'?') + ' - ' + (itemCodigo||'ingrediente') + ' #' + String(cronogramaIngId).slice(0,8);
 }
 // Descuenta del Kardex el consumo de UN ingrediente de una orden (reconciliable:
 // borra lo anterior de ese mismo ingrediente y vuelve a insertar lo actual, así
 // que se puede volver a elegir el lote sin duplicar el descuento).
-async function kardexEscribirIngredienteConsumo(cronogramaIngId, itemCodigo, fecha, lotesConsumidos){
-  const comprobante = 'CONSUMO-ING-' + cronogramaIngId;
+async function kardexEscribirIngredienteConsumo(cronogramaIngId, itemCodigo, fecha, lotesConsumidos, ordenProduccion){
+  const comprobante = comprobanteConsumoIngrediente(ordenProduccion, itemCodigo, cronogramaIngId);
   const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   if(errDel) return { error: errDel };
   const movimientos = (lotesConsumidos||[]).filter(l=>Number(l.cantidad)>0).map(l=>({
@@ -4961,7 +5280,7 @@ async function etiqLoad(force){
   if(!sb) return;
   const tasks = [];
   if(force || !cacheItems) tasks.push(invLoad(true));
-  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=r.data||[]));
+  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=(r.data||[]).map(f=>({...f, cod_producto_principal:normalizarCodigo(f.cod_producto_principal), cod_componente:normalizarCodigo(f.cod_componente)}))));
   if(force || !cacheCatalogosPlan) tasks.push(sb.from('catalogos').select('*').eq('activo',true).then(r=>cacheCatalogosPlan=r.data||[]));
   tasks.push(
     (async ()=>{
@@ -5292,6 +5611,8 @@ async function etiqGuardarModal(){
   if(sinLote.length){ toast('Falta elegir el lote de: ' + sinLote.map(r=>r.item_codigo).join(', ')); return; }
 
   if(lote !== row.lote){
+    const bloqueoLote = await despMensajeBloqueoLote(row.item_codigo, row.lote);
+    if(bloqueoLote){ alert(bloqueoLote); return; }
     const { error: errLote } = await sb.from('cronograma').update({ lote }).eq('id', row.id);
     if(errLote){ toast('Error al actualizar el lote: ' + errLote.message); return; }
     row.lote = lote;
@@ -5339,7 +5660,15 @@ function etiqRenderMeListHtml(registros){
     </div>
   `).join('');
 }
+// Un registro de etiquetado es de un producto+lote: si ese lote ya se despachó, no se puede eliminar.
+async function etiqBloqueoRegistro(id){
+  const { data } = await sb.from('etiquetado_registros').select('item_codigo, lote_producto').eq('id', id).single();
+  if(!data) return null;
+  return await despMensajeBloqueoLote(data.item_codigo, data.lote_producto);
+}
 async function etiqEliminarME(id){
+  const bloqueo = await etiqBloqueoRegistro(id);
+  if(bloqueo){ alert(bloqueo); return; }
   if(!confirm('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
@@ -5410,6 +5739,8 @@ function renderEtiqRegistrosList(){
   `).join('');
 }
 async function etiqEliminarMEDesdeRegistros(id){
+  const bloqueo = await etiqBloqueoRegistro(id);
+  if(bloqueo){ alert(bloqueo); return; }
   if(!confirm('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
@@ -5461,6 +5792,1127 @@ async function monLoad(force){
    CALIDAD — Bajas y Mermas del día + Cuarentena de lotes
    ============================================================ */
 let CalState = { tab:'bajasmermas', desde: todayISO(), hasta: todayISO(), q:'' };
+/* ============================================================
+   ENTREGAS — Calendario semanal
+   ============================================================ */
+const ENT_DIAS = ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'];
+// Paleta de colores bien diferenciables entre sí, para asignar automáticamente
+// sin repetir dentro de la misma semana (lunes a domingo).
+const ENT_PALETA = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#DB2777','#0891B2','#65A30D','#EA580C','#4F46E5','#0D9488','#BE185D'];
+/* ============================================================
+   DESPACHO DE ENTREGAS (compartido entre Logística → Despachos y
+   Sellado → Control de despacho): convierte lo pedido a cajas completas
+   usando el factor de "Códigos de Cliente por Producto", las va tomando
+   de los lotes disponibles en Kardex empezando por el más antiguo (FIFO),
+   y al confirmar descuenta el Kardex y marca la entrega como completada.
+   ============================================================ */
+/* ============================================================
+   BLOQUEO POR DESPACHO
+   Una vez que un producto+lote aparece en un registro guardado de
+   Liberación de producto (que es cuando se descuenta el Kardex), lo ya
+   registrado de ese lote deja de poder editarse o eliminarse en las demás
+   páginas. Para corregir algo hay que ir hacia atrás: eliminar el registro
+   de despacho, reiniciar los lotes en Logística → Despachos, y así hasta
+   llegar a lo que se quiere corregir (o usar Ajuste para el Kardex).
+   ============================================================ */
+let cacheDespachados = { porLote:{}, porEntrega:{} };
+async function despLoadDespachados(){
+  let { data, error } = await sb.from('despacho_registros').select('numero_despacho, entrega_id, items');
+  if(error){ // por si todavía no se ha corrido la migración de entrega_id, el bloqueo por lote sigue funcionando
+    ({ data } = await sb.from('despacho_registros').select('numero_despacho, items'));
+  }
+  const porLote = {}, porEntrega = {};
+  (data||[]).forEach(r=>{
+    (r.items||[]).forEach(it=>{
+      const lotes = (it.lotes&&it.lotes.length) ? it.lotes : [{lote:'', cantidad: it.cantidad}];
+      lotes.forEach(l=>{
+        if(Number(l.cantidad)>0){
+          const k = normalizaNombre(it.item_codigo)+'|'+normalizaNombre(l.lote||'');
+          if(!porLote[k]) porLote[k] = r.numero_despacho;
+        }
+      });
+    });
+    if(r.entrega_id) porEntrega[r.entrega_id] = r.numero_despacho;
+  });
+  cacheDespachados = { porLote, porEntrega };
+  return cacheDespachados;
+}
+// Devuelve el texto del aviso si ese producto+lote ya se despachó, o null si no.
+async function despMensajeBloqueoLote(itemCodigo, lote){
+  if(!itemCodigo) return null;
+  await despLoadDespachados();
+  const n = cacheDespachados.porLote[normalizaNombre(itemCodigo)+'|'+normalizaNombre(lote||'')];
+  if(n==null) return null;
+  return 'Este producto (lote ' + (lote||'sin lote') + ') ya fue despachado — Despacho N° ' + n + '. Ya no se puede editar ni eliminar. Para corregirlo: elimina ese registro en Logística → Registros, reinicia los lotes en Logística → Despachos y ve retrocediendo hasta lo que quieras cambiar (o usa Ajuste para corregir el Kardex).';
+}
+async function despMensajeBloqueoEntrega(entregaId){
+  await despLoadDespachados();
+  const n = cacheDespachados.porEntrega[entregaId];
+  if(n==null) return null;
+  return 'Esta orden de compra ya fue despachada — Despacho N° ' + n + '. Ya no se puede editar ni eliminar. Para corregirla, primero elimina ese registro en Logística → Registros y reinicia los lotes en Logística → Despachos.';
+}
+async function despEntListaPendientes(){
+  // Todas las órdenes de compra que todavía no se han despachado, sin
+  // importar la semana — las más antiguas primero, para que las atrasadas
+  // salten a la vista de una vez. Se usa en Sellado → Control de despacho.
+  const { data } = await sb.from('entregas').select('*').eq('completado', false).order('fecha').order('hora_entrega');
+  return data || [];
+}
+async function despEntListaTodas(){
+  // Todas las órdenes de compra, pendientes Y completadas — se usa en
+  // Logística → Despachos, que necesita ver el panorama completo.
+  const { data } = await sb.from('entregas').select('*').order('fecha').order('hora_entrega');
+  return data || [];
+}
+function despEntRenderLista(containerId, rows, q, conBotonDespachar){
+  const wrap = document.getElementById(containerId);
+  if(!wrap) return;
+  let filtradas = rows;
+  const qq = (q||'').trim().toUpperCase();
+  if(qq){
+    filtradas = rows.filter(e=>(e.cliente||'').toUpperCase().includes(qq) || (e.numero_oc||'').toUpperCase().includes(qq) || (e.items||[]).some(it=>(it.item_nombre||'').toUpperCase().includes(qq)));
+  }
+  if(!filtradas.length){ wrap.innerHTML = '<div class="empty-state">Sin entregas</div>'; return; }
+  wrap.innerHTML = filtradas.map(e=>{
+    const nItems = (e.items||[]).length;
+    // En Logística, una entrega ya completada no abre nada al tocarla (solo
+    // se ve en verde) — en su lugar aparece el botón "Despachar", que precarga
+    // los datos ya conocidos en Liberación de producto.
+    const clickable = !(conBotonDespachar && e.completado);
+    const despachadoN = conBotonDespachar ? (cacheDespachados.porEntrega||{})[e.id] : null;
+    return `<div class="reg-row ${e.completado?'inactive':''}" ${clickable?`onclick="despAbrirAsignacion('${e.id}')"`:''}>
+      <div class="rmain"><span class="sup">${ddMMyy(e.fecha)} · ${(e.hora_entrega||'').slice(0,5)}${e.numero_oc?(' · OC '+escHtml(e.numero_oc)):''}</span><span class="big">${escHtml(e.cliente||'(sin cliente)')}</span><span class="sub">${nItems} ítem(s)</span></div>
+      <div class="rval" style="display:flex;align-items:center;gap:8px;">
+        ${e.completado ? '<span class="badge-completado">✓ COMPLETADO!</span>' : '<span class="sub">Pendiente</span>'}
+        ${despachadoN!=null ? `<span class="badge-completado" style="background:var(--muted);">🔒 DESPACHADO N° ${escHtml(String(despachadoN))}</span>` : ''}
+        ${(conBotonDespachar && e.completado && despachadoN==null) ? `<button class="btn primary" style="--accent:var(--paradas);padding:8px 12px;font-size:12px;" onclick="event.stopPropagation(); despIniciarLiberacionDesdeEntrega('${e.id}')">🚚 Despachar</button><button class="btn ghost" style="padding:8px 12px;font-size:12px;" onclick="event.stopPropagation(); despReiniciarEntrega('${e.id}')">↺ Reiniciar</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+// Deshace la designación de lotes de una entrega ya completada, para poder
+// volver a elegirlos (por si algo cambia a última hora). No toca el Kardex:
+// el descuento solo ocurre al guardar en Liberación de producto.
+async function despReiniciarEntrega(entregaId){
+  const bloqueo = await despMensajeBloqueoEntrega(entregaId);
+  if(bloqueo){ alert(bloqueo); return; }
+  if(!confirm('¿Reiniciar esta entrega? Se borran los lotes designados y vuelve a quedar pendiente en Sellado → Control de despacho para elegirlos de nuevo.')) return;
+  const { data: e } = await sb.from('entregas').select('items').eq('id', entregaId).single();
+  if(!e){ toast('No se encontró la entrega'); return; }
+  const items = (e.items||[]).map(it=>{ const { lotes_despacho, ...resto } = it; return resto; });
+  const { error } = await sb.from('entregas').update({ items, completado:false }).eq('id', entregaId);
+  if(error){ toast('Error: '+error.message); return; }
+  await entRefrescarTrasGuardar();
+  if(document.getElementById('despRoot')) despRenderRootBody();
+  toast('Entrega reiniciada — ya se pueden volver a elegir los lotes');
+}
+// Toma lo que ya se designó en Control de Despacho (cliente, dirección,
+// productos con su lote y cantidad en cajas) y arma con eso un registro
+// nuevo en Liberación de producto, ya con la mitad de los datos puestos —
+// convirtiendo las cajas de vuelta a unidades para que calce con cómo se
+// maneja ahí.
+async function despIniciarLiberacionDesdeEntrega(entregaId){
+  const { data: e } = await sb.from('entregas').select('*').eq('id', entregaId).single();
+  if(!e){ toast('No se encontró la entrega'); return; }
+  const yaDespachada = await despMensajeBloqueoEntrega(entregaId);
+  if(yaDespachada){ alert(yaDespachada); return; }
+  if(!cacheCodigosCliente) await entLoadCodigosCliente();
+  const n = await nextDespachoN();
+  const draft = despNuevoDraft(n);
+  draft.entrega_id = e.id; // para saber de qué orden viene este despacho y bloquearla una vez guardado
+  draft.hora_llegada = nowHM();
+  draft.destino = e.direccion_entrega || '';
+  draft.cliente = e.cliente || '';
+  const items = [];
+  (e.items||[]).forEach(it=>{
+    if(!it.item_codigo || !it.lotes_despacho || !it.lotes_despacho.length) return;
+    let mapeo = (cacheCodigosCliente||[]).find(c=>c.item_codigo===it.item_codigo && c.codigo_cliente===it.codigo_cliente && c.unidades_por_caja);
+    if(!mapeo) mapeo = (cacheCodigosCliente||[]).find(c=>c.item_codigo===it.item_codigo && c.unidades_por_caja);
+    const uxc = (mapeo && mapeo.unidades_por_caja) || 1;
+    const itemInfo = (cacheStock||[]).find(i=>i.codigo===it.item_codigo) || (cacheItems||[]).find(i=>i.codigo===it.item_codigo);
+    const lotes = it.lotes_despacho.map(l=>({ lote: l.lote, cantidad: l.cajas * uxc }));
+    const cantidadTotal = lotes.reduce((s,l)=>s+l.cantidad,0);
+    items.push({
+      id: 'di_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+      item_codigo: it.item_codigo, item_nombre: it.item_nombre || (itemInfo?itemInfo.nombre:it.item_codigo),
+      medida: itemInfo?itemInfo.medida:'', cantidad: cantidadTotal, lotes, temperatura: null
+    });
+  });
+  draft.items = items;
+  DespState.draft = draft;
+  DespState.tab = 'liberacion';
+  setActiveTab('liberacion');
+  despRenderRootBody();
+  toast('Datos precargados desde la entrega — completa lo que falte en Liberación de producto');
+}
+let DespAsignacionState = null;
+async function despAbrirAsignacion(entregaId){
+  const { data: e } = await sb.from('entregas').select('*').eq('id', entregaId).single();
+  if(!e){ toast('No se encontró la entrega'); return; }
+  const filas = (e.items||[]).map((it, idx)=>{
+    if(!it.item_codigo) return { idx, it, sinMapear:true };
+    // Primero busca la coincidencia exacta (mismo código de cliente); si no
+    // hay, usa cualquier otro código registrado para ese mismo producto que
+    // ya tenga definidas las unidades por caja — para que también funcione
+    // con ítems agregados a mano (sin código de cliente asociado).
+    let mapeo = (cacheCodigosCliente||[]).find(c=>c.item_codigo===it.item_codigo && c.codigo_cliente===it.codigo_cliente && c.unidades_por_caja);
+    if(!mapeo) mapeo = (cacheCodigosCliente||[]).find(c=>c.item_codigo===it.item_codigo && c.unidades_por_caja);
+    const uxc = (mapeo && mapeo.unidades_por_caja) || null;
+    return { idx, it, uxc, lotesAsignados: it.lotes_despacho||[] };
+  });
+  DespAsignacionState = { entregaId, e, filas };
+  openModal(`
+    <h3>${escHtml(e.cliente||'(sin cliente)')}</h3>
+    <div class="msub">${ddMMyy(e.fecha)} · ${(e.hora_entrega||'').slice(0,5)}${e.numero_oc?(' · OC '+escHtml(e.numero_oc)):''}${e.completado?' · ✓ COMPLETADO':''}</div>
+    <div class="sub" style="margin-top:4px;">Designa el lote a despachar</div>
+    <div class="reg-list" style="margin-top:10px;" id="despAsigItemsList">${despRenderFilasAsignacion()}</div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+      ${e.completado ? '' : `<button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmarAsignacion()">✓ Confirmar despacho</button>`}
+    </div>
+  `);
+}
+function despRenderFilasAsignacion(){
+  const { filas } = DespAsignacionState;
+  return filas.map(f=>{
+    if(f.sinMapear) return `<div class="reg-row"><div class="rmain"><span class="big">${escHtml(f.it.item_nombre||'(sin producto)')}</span></div><div class="rval"><span class="big">${fmtNum(f.it.cantidad)}</span><span class="sub">${escHtml(f.it.medida||'')}</span></div></div>`;
+    const lotes = f.lotesAsignados||[];
+    const resumenLotes = lotes.length ? lotes.map(l=>'Lote '+l.lote+': '+l.cajas+' caja(s)').join(' · ') : 'Toca para elegir el lote';
+    return `<div class="reg-row" style="cursor:pointer;flex-wrap:wrap;" onclick="despAbrirLotePickerItem(${f.idx})">
+      <div class="rmain"><span class="sup">${escHtml(f.it.item_codigo)}</span><span class="big">${escHtml(f.it.item_nombre)}</span></div>
+      <div class="rval" style="display:flex;align-items:center;gap:8px;flex-wrap:nowrap;">
+        <span class="big">${fmtNum(f.it.cantidad)}</span><span class="sub" style="display:inline;">${escHtml(f.it.medida||'')}</span>
+        ${lotes.length ? `<button class="redit" title="Quitar lote elegido" onclick="event.stopPropagation(); despReiniciarLoteItem(${f.idx})">↺</button>` : ''}
+      </div>
+      <div class="sub" style="width:100%;margin-top:2px;">${resumenLotes}</div>
+    </div>`;
+  }).join('');
+}
+let despAsigLoteConsumo = { total:0, seleccion:{}, disponibles:[] };
+// Cuántas cajas de ese ítem+lote ya quedaron apartadas para OTRAS órdenes que
+// ya se confirmaron en Control de Despacho — aunque el Kardex todavía no las
+// haya descontado (eso pasa hasta que se guarda en Liberación de producto),
+// esas cajas ya no están libres para elegir de nuevo en una orden distinta.
+async function despCajasYaReservadas(itemCodigo, lote, entregaIdActual){
+  const { data } = await sb.from('entregas').select('id, items').eq('completado', true);
+  let total = 0;
+  (data||[]).forEach(e=>{
+    if(e.id === entregaIdActual) return; // no restar lo que la propia orden ya tenía elegido
+    (e.items||[]).forEach(it=>{
+      if(it.item_codigo !== itemCodigo) return;
+      (it.lotes_despacho||[]).forEach(l=>{
+        if((l.lote||'') === (lote||'')) total += Number(l.cajas||0);
+      });
+    });
+  });
+  return total;
+}
+async function despAbrirLotePickerItem(idx){
+  const f = DespAsignacionState.filas.find(x=>x.idx===idx);
+  if(!f) return;
+  if(!f.uxc){ toast('Falta definir "Unidades por caja" para este producto en Configuración → Códigos de Cliente'); return; }
+  const cajasNecesarias = Math.floor(Number(f.it.cantidad||0)); // la cantidad del ítem ya viene en cajas — no hay que convertirla
+  openModal(`
+    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(f.it.item_codigo)}</span>
+    <h3 style="margin-top:2px;">${escHtml(f.it.item_nombre)}</h3>
+    <div class="msub">Selecciona el o los lotes a despachar (en cajas)</div>
+    <div id="despLoteList"><div class="empty-state">Cargando…</div></div>
+    <div class="lote-remain" id="despLoteRemain"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmarLotesItem(${idx})">Confirmar</button>
+    </div>
+  `);
+  const { data: lotes, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', f.it.item_codigo).order('fecha_ingreso');
+  const listEl = document.getElementById('despLoteList');
+  if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
+  const lotesFiltrados = await filtrarLotesDisponibles(f.it.item_codigo, lotes||[]); // respeta lo que esté en cuarentena
+  // El Kardex muestra la cantidad desde que se crea la producción, sin
+  // esperar a que se selle — así que lo disponible para despachar de cada
+  // lote es lo que YA se selló de verdad (ni más, aunque el Kardex diga más
+  // porque todavía no se ha terminado de sellar todo el lote; ni menos, si
+  // ya se selló una parte y con eso alcanza para esta orden), menos lo que
+  // ya se apartó para otras órdenes ya confirmadas.
+  await selCargarPendientesSellado();
+  const conCajas = [];
+  const diagnostico = []; // por qué cada lote sí o no aparece — para no dejar la lista vacía sin explicación
+  const clavesKardex = new Set();
+  for(const l of lotesFiltrados){
+    const claveN = normalizaNombre(f.it.item_codigo)+'|'+normalizaNombre(l.lote||'');
+    clavesKardex.add(claveN);
+    const yaSellado = cacheSelladoPorLote[claveN] || 0;
+    const kardexDisp = Number(l.cantidad_disponible||0);
+    const disponibleReal = Math.min(kardexDisp, yaSellado);
+    const cajasSelladas = Math.floor(disponibleReal/f.uxc);
+    const reservadas = await despCajasYaReservadas(f.it.item_codigo, l.lote, DespAsignacionState.entregaId);
+    const cajasLibres = Math.max(0, cajasSelladas - reservadas);
+    diagnostico.push(`Lote ${l.lote}: Kardex ${fmtNum(kardexDisp)} u · sellado ${fmtNum(yaSellado)} u · ${cajasSelladas} caja(s) completa(s)${reservadas?(' · '+reservadas+' ya apartada(s) en otras órdenes'):''}`);
+    if(cajasLibres>0) conCajas.push({ ...l, cajas: cajasLibres });
+  }
+  // Lotes que sí se sellaron pero que en Kardex no aparecen con ese mismo
+  // nombre de lote — se avisa, porque sin saldo en Kardex no se pueden despachar.
+  Object.keys(cacheSelladoPorLote).forEach(k=>{
+    if(k.startsWith(normalizaNombre(f.it.item_codigo)+'|') && !clavesKardex.has(k) && cacheSelladoPorLote[k]>0){
+      diagnostico.push(`Lote ${k.split('|')[1]||'(sin lote)'}: se selló ${fmtNum(cacheSelladoPorLote[k])} u, pero en Kardex no hay saldo con ese nombre de lote`);
+    }
+  });
+  const previamente = new Set((f.lotesAsignados||[]).map(l=>l.lote));
+  despAsigLoteConsumo = { total: cajasNecesarias, seleccion:{}, disponibles: conCajas };
+  (f.lotesAsignados||[]).forEach(l=>{ despAsigLoteConsumo.seleccion[l.lote] = l.cajas; });
+  if(!conCajas.length){
+    listEl.innerHTML = '<div class="empty-state">Sin cajas completas disponibles en ningún lote</div>'
+      + (diagnostico.length ? `<div class="sub" style="margin-top:8px;">Detalle por lote:<br>${diagnostico.map(d=>escHtml(d)).join('<br>')}</div>` : '<div class="sub" style="margin-top:8px;">No hay ningún lote de este producto en Kardex ni sellado registrado.</div>');
+  }
+  else{
+    listEl.innerHTML = conCajas.map(l=>`
+      <div class="lote-row">
+        <input type="checkbox" ${previamente.has(l.lote)?'checked':''} onchange="despAsigToggleLote('${escHtml(l.lote)}', ${l.cajas}, this.checked)">
+        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>Ingreso ${l.fecha_ingreso?l.fecha_ingreso.split('-').reverse().join('/'):'—'}${l.fecha_caducidad?(' · Caduca '+l.fecha_caducidad.split('-').reverse().join('/')):''}</span></div>
+        <div class="lq">${l.cajas} caja(s)</div>
+      </div>
+    `).join('');
+  }
+  despAsigLoteRecalc();
+}
+function despAsigToggleLote(lote, disponible, checked){
+  if(checked){
+    const yaAsignado = Object.values(despAsigLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+    const falta = Math.max(0, despAsigLoteConsumo.total - yaAsignado);
+    despAsigLoteConsumo.seleccion[lote] = Math.min(disponible, falta);
+  } else {
+    delete despAsigLoteConsumo.seleccion[lote];
+  }
+  despAsigLoteRecalc();
+}
+function despAsigLoteRecalc(){
+  const asignado = Object.values(despAsigLoteConsumo.seleccion).reduce((s,v)=>s+v,0);
+  const falta = despAsigLoteConsumo.total - asignado;
+  const remainEl = document.getElementById('despLoteRemain');
+  if(remainEl){
+    remainEl.className = 'lote-remain ' + (falta<=0 ? 'ok' : 'warn');
+    remainEl.innerHTML = `<span>Cajas necesarias: ${despAsigLoteConsumo.total}</span><span>${falta>0 ? ('Faltan '+falta+' caja(s)') : 'Completo'}</span>`;
+  }
+}
+function despConfirmarLotesItem(idx){
+  const seleccionados = Object.entries(despAsigLoteConsumo.seleccion).filter(([,v])=>v>0).map(([lote,cajas])=>({lote, cajas}));
+  const asignado = seleccionados.reduce((s,l)=>s+l.cajas,0);
+  const falta = despAsigLoteConsumo.total - asignado;
+  if(falta > 0){ toast('Los lotes elegidos no completan las cajas necesarias. Faltan ' + falta + ' caja(s).'); return; }
+  const f = DespAsignacionState.filas.find(x=>x.idx===idx);
+  f.lotesAsignados = seleccionados;
+  closeModal();
+  const wrap = document.getElementById('despAsigItemsList');
+  if(wrap) wrap.innerHTML = despRenderFilasAsignacion();
+}
+function despReiniciarLoteItem(idx){
+  const f = DespAsignacionState.filas.find(x=>x.idx===idx);
+  if(!f) return;
+  f.lotesAsignados = [];
+  const wrap = document.getElementById('despAsigItemsList');
+  if(wrap) wrap.innerHTML = despRenderFilasAsignacion();
+}
+async function despConfirmarAsignacion(){
+  const { entregaId, e, filas } = DespAsignacionState;
+  const asignables = filas.filter(f=>!f.sinMapear && f.uxc);
+  if(!asignables.length){ toast('No hay ítems listos para despachar (falta el producto o el factor de conversión)'); return; }
+  // Por ahora esto NO descuenta el Kardex — esa parte se define aparte, en
+  // Logística. Aquí solo se guarda qué lote se designó para cada ítem y se
+  // marca la entrega como completada.
+  const items = (e.items||[]).map((it, idx)=>{
+    const f = filas.find(x=>x.idx===idx);
+    if(f && f.lotesAsignados && f.lotesAsignados.length) return { ...it, lotes_despacho: f.lotesAsignados };
+    return it;
+  });
+  await sb.from('entregas').update({ items, completado: true }).eq('id', entregaId);
+  closeModal();
+  await entRefrescarTrasGuardar();
+  if(typeof despRenderRootBody === 'function' && document.getElementById('despRoot')) despRenderRootBody();
+  if(typeof selRenderControlDespacho === 'function' && document.getElementById('selRoot')) selRenderControlDespacho();
+  toast('Despacho confirmado — la entrega quedó marcada como completada');
+}
+
+async function entColorAutomatico(fecha, usadosExtra){
+  const lunes = entLunesDe(fecha);
+  const domingo = entSumarDias(lunes, 6);
+  const { data } = await sb.from('entregas').select('color').gte('fecha', lunes).lte('fecha', domingo);
+  // El selector de color del navegador guarda los colores en minúscula
+  // (#2563eb) y la paleta está en mayúscula — se comparan en mayúscula para
+  // que un color ya usado esa semana cuente como usado.
+  const usados = new Set((data||[]).map(r=>(r.color||'').toUpperCase()));
+  if(usadosExtra) usadosExtra.forEach(c=>usados.add((c||'').toUpperCase()));
+  const libres = ENT_PALETA.filter(c=>!usados.has(c.toUpperCase()));
+  const pool = libres.length ? libres : ENT_PALETA; // si ya se usaron todos, se repite alguno
+  return pool[Math.floor(Math.random()*pool.length)]; // al azar entre los que no se han usado esa semana
+}
+// Busca si esa Orden de Compra ya está registrada (para no volver a
+// ingresarla). excluirId sirve para que, al editar una entrega, no se marque
+// a sí misma como "duplicada".
+async function entBuscarOCExistente(numeroOC, excluirId){
+  if(!numeroOC) return null;
+  let q = sb.from('entregas').select('*').eq('numero_oc', numeroOC);
+  if(excluirId) q = q.neq('id', excluirId);
+  const { data } = await q.limit(1);
+  return (data && data[0]) || null;
+}
+const ENT_ROW_H = 100; // alto de cada hora con entregas, en px (alcanza para la tarjeta completa)
+const ENT_ROW_H_COMPACTO = 16; // alto de una hora sin ninguna entrega esa semana
+function entLunesDe(fechaISO){
+  const d = new Date(fechaISO + 'T00:00:00');
+  const dow = d.getDay(); // 0=domingo, 1=lunes, ... 6=sábado
+  const diff = dow === 0 ? -6 : 1 - dow; // retrocede hasta el lunes de esa semana
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0,10);
+}
+function entSumarDias(fechaISO, n){
+  const d = new Date(fechaISO + 'T00:00:00');
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0,10);
+}
+let EntState = { semanaInicio: entLunesDe(todayISO()), tab: 'calendario' };
+let EntRegState = { desde: entSumarDias(todayISO(), -30), hasta: todayISO(), q: '' };
+let cacheEntregas = [];
+/* ---------------- Lectura de Órdenes de Compra en PDF ---------------- */
+async function entExtraerTextoPDF(file){
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let texto = '';
+  const TOL = 2.5; // tolerancia en px: agrupa como la misma línea aunque la posición vertical varíe un poco
+  for(let i=1; i<=pdf.numPages; i++){
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const items = content.items.map(it=>({ x: it.transform[4], y: it.transform[5], str: it.str })).sort((a,b)=> b.y - a.y || a.x - b.x);
+    const lineas = [];
+    items.forEach(it=>{
+      let linea = lineas.find(l=>Math.abs(l.y - it.y) <= TOL);
+      if(!linea){ linea = { y: it.y, items: [] }; lineas.push(linea); }
+      linea.items.push(it);
+    });
+    lineas.forEach(l=>{
+      texto += l.items.sort((a,b)=>a.x-b.x).map(it=>it.str).join(' ') + '\n';
+    });
+  }
+  return texto;
+}
+// Lee cualquier archivo soportado (PDF o texto plano) y devuelve su texto —
+// para que la carga de OC funcione igual sin importar en qué formato venga.
+async function entLeerArchivoComoTexto(file){
+  const nombre = (file.name||'').toLowerCase();
+  if(nombre.endsWith('.pdf') || file.type==='application/pdf'){
+    return await entExtraerTextoPDF(file);
+  }
+  return await file.text();
+}
+function entNormalizarFecha(txt){
+  const m = (txt||'').match(/(\d{1,2})[.\/\-](\d{1,2})[.\/\-](\d{2,4})/);
+  if(!m) return null;
+  let anio = m[3];
+  if(anio.length===2) anio = '20'+anio;
+  return anio + '-' + m[2].padStart(2,'0') + '-' + m[1].padStart(2,'0');
+}
+function entNormalizarHora(txt){
+  txt = (txt||'').trim();
+  let m = txt.match(/(\d{1,2}):(\d{2})\s*([AaPp])\.?[Mm]?\.?/);
+  if(m){
+    let h = parseInt(m[1],10); const min = m[2]; const ampm = m[3].toUpperCase();
+    if(ampm==='P' && h<12) h+=12;
+    if(ampm==='A' && h===12) h=0;
+    return String(h).padStart(2,'0')+':'+min;
+  }
+  m = txt.match(/(\d{1,2})\s*([AaPp])\.?[Mm]?\.?/); // sin minutos, ej. "8 AM"
+  if(m){
+    let h = parseInt(m[1],10); const ampm = m[2].toUpperCase();
+    if(ampm==='P' && h<12) h+=12;
+    if(ampm==='A' && h===12) h=0;
+    return String(h).padStart(2,'0')+':00';
+  }
+  m = txt.match(/(\d{1,2}):(\d{2})/);
+  if(m) return m[1].padStart(2,'0')+':'+m[2];
+  return null;
+}
+// Reglas de lectura de la OC (ver notas del proceso: primero NOTAS, luego
+// OBSERVACIÓN, y por último FECHA Y HORA o "Entregar hasta el día"/"Horario
+// de Entrega" para la fecha/hora de entrega — soporta más de un formato de
+// proveedor, probando cada patrón en orden hasta que alguno encaje).
+const ENT_MESES = {ENE:1,FEB:2,MAR:3,ABR:4,MAY:5,JUN:6,JUL:7,AGO:8,SEP:9,OCT:10,NOV:11,DIC:12};
+function entFechaISO(a,m,d){ return String(a)+'-'+String(m).padStart(2,'0')+'-'+String(d).padStart(2,'0'); }
+// Reglas de lectura de la OC — probadas contra 5 formatos reales de clientes
+// distintos (TUTI, LIRIS, Corporación Favorita, TIA, El Rosado). Cada campo
+// se intenta con varios patrones en orden hasta que alguno encaje, así que
+// añadir un nuevo formato de cliente es agregar un intento más a cada bloque,
+// sin tocar los que ya funcionan.
+function entParsearTextoOC(texto){
+  texto = texto.replace(/\u00AD/g, '-'); // normaliza guiones "blandos" que a veces trae el PDF
+  const resultado = { cliente:null, direccion:null, numero_oc:null, fecha:null, hora:null, items:[] };
+
+  // ---- Cliente ----
+  const mClienteTuti = texto.match(/ENTREGAR EN:\s*\d+\s+([^\n]+)/i); // TUTI
+  if(mClienteTuti) resultado.cliente = mClienteTuti[1].trim();
+  if(!resultado.cliente){
+    // Favorita: "<CLIENTE>   PROPIZZEC" en la misma línea (dos columnas)
+    const mClienteFav = texto.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9.,&' ]+?)\s{3,}PROPIZZEC/m);
+    if(mClienteFav) resultado.cliente = mClienteFav[1].trim();
+  }
+  if(!resultado.cliente){
+    // El Rosado: primera línea, seguida de "PROVEEDOR"
+    const mClienteRosado = texto.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9.,&' ]+?)\s*\n\s*PROVEEDOR/im);
+    if(mClienteRosado) resultado.cliente = mClienteRosado[1].trim();
+  }
+  if(!resultado.cliente){
+    // TIA: la línea justo después del RUC del cliente
+    const mClienteTIA = texto.match(/RUC:\s*\d+\s*\n\s*([^\n]+?)(?:\s+Fecha De La Orden|\s*\n)/i);
+    if(mClienteTIA) resultado.cliente = mClienteTIA[1].trim();
+  }
+  if(!resultado.cliente){
+    // LIRIS y similares: primera línea que parezca nombre de empresa (S.A./S.A.S.) que no sea la nuestra
+    const candidatos = [...texto.matchAll(/^([A-ZÁÉÍÓÚÑ0-9][A-ZÁÉÍÓÚÑ0-9.,& ]*?S\.?A\.?S?\.?)[ \t]*$/gm)];
+    const valido = candidatos.find(m => !/PROPIZZEC|SRES/i.test(m[1]));
+    if(valido) resultado.cliente = valido[1].trim();
+  }
+
+  // ---- Dirección de entrega ----
+  const posEntregarEn = texto.search(/ENTREGAR EN:/i);
+  if(posEntregarEn >= 0){
+    const mDir = texto.slice(posEntregarEn).match(/Direcci[oó]n:\s*([^\n]+)/i);
+    if(mDir) resultado.direccion = mDir[1].replace(/\s*TEL:.*$/i,'').trim();
+  }
+  if(!resultado.direccion){
+    const mDir2 = texto.match(/Direcci[oó]n de entrega\s*\n\s*([^\n]+)/i);
+    if(mDir2) resultado.direccion = mDir2[1].trim();
+  }
+  if(!resultado.direccion){
+    // Favorita/TIA: la línea siguiente a la del cliente, primera columna
+    let posCliente = -1, offset = 1;
+    const mF = texto.match(/^([A-ZÁÉÍÓÚÑ][A-ZÁÉÍÓÚÑ0-9.,&' ]+?)\s{3,}PROPIZZEC/m);
+    const mT = texto.match(/RUC:\s*\d+\s*\n\s*([^\n]+?)(?:\s+Fecha De La Orden|\s*\n)/i);
+    if(mF){ posCliente = texto.indexOf(mF[0]); offset = 1; }
+    else if(mT){ posCliente = texto.indexOf(mT[0]); offset = 2; }
+    if(posCliente>=0){
+      const restoLineas = texto.slice(posCliente).split('\n');
+      if(restoLineas[offset]) resultado.direccion = restoLineas[offset].split(/\s{2,}/)[0].trim();
+    }
+  }
+  if(!resultado.direccion && resultado.cliente) resultado.direccion = resultado.cliente; // se duplica si la OC no trae dirección
+
+  // ---- N° de Orden de Compra ----
+  let mOC = texto.match(/CITA PARA ENTREGA:\s*(\d{4,})/i);
+  if(!mOC) mOC = texto.match(/Orden de Compra\s+(OC[_-]?\d+)/i);
+  if(!mOC) mOC = texto.match(/ORDEN DE COMPRA\s*N[ºo]\s*(\d+)/i); // TIA
+  if(!mOC) mOC = texto.match(/NUMERO DE ORDEN\s+(\d+)/i); // El Rosado
+  if(!mOC) mOC = texto.match(/ORDEN COMPRA[^\n]*?:\s*([\d ]+?)\s*$/m); // Favorita
+  if(!mOC){
+    const posOC = texto.search(/ORDEN DE COMPRA/i);
+    if(posOC >= 0){
+      const nums = texto.slice(posOC, posOC+200).match(/\b\d{6,}\b/g);
+      if(nums && nums.length) mOC = [null, nums[nums.length-1]];
+    }
+  }
+  if(mOC) resultado.numero_oc = mOC[1].trim().replace(/\s+/g,' ');
+
+  // ---- Fecha y hora de entrega ----
+  function buscarFechaHoraEn(bloque){
+    const m = bloque.match(/FECHA:\s*([\d.\/\-]+)\s*HORA:\s*([\d:]+\s*[AaPp]\.?[Mm]?\.?)/i);
+    return m ? { fecha: m[1], hora: m[2] } : null;
+  }
+  const mNotas = texto.match(/NOTAS:([\s\S]{0,200})/i);
+  let fh = mNotas ? buscarFechaHoraEn(mNotas[1]) : null;
+  if(!fh){
+    const mObs = texto.match(/OBSERVACI[OÓ]N:([\s\S]{0,200})/i);
+    fh = mObs ? buscarFechaHoraEn(mObs[1]) : null;
+  }
+  if(!fh){
+    const mFyH = texto.match(/FECHA Y HORA:\s*([\d.\/\-]+),?\s*([\d:]+)/i);
+    if(mFyH) fh = { fecha: mFyH[1], hora: mFyH[2] };
+  }
+  if(!fh){
+    // "Entregar hasta el día...." + "Horario de Entrega: 8 AM a 3 PM..." (LIRIS, se toma la primera hora)
+    const mFecha = texto.match(/Entregar hasta el d[ií]a[.\s]*:?\s*(\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{2,4})/i);
+    const mHora = texto.match(/Horario de Entrega:?\s*(\d{1,2}(?::\d{2})?\s*[AaPp]\.?[Mm]?\.?)/i);
+    if(mFecha || mHora) fh = { fecha: mFecha?mFecha[1]:null, hora: mHora?mHora[1]:null };
+  }
+  if(!fh){
+    // Favorita: "Fecha Cancela: 26/SEP/2026" (mes en letras) — sin hora, se define 7:00 AM
+    const mFC = texto.match(/Fecha Cancela:\s*(\d{1,2})\/([A-Z]{3})\/(\d{4})/i);
+    if(mFC){ const mes = ENT_MESES[mFC[2].toUpperCase()]; if(mes) fh = { fecha: entFechaISO(mFC[3],mes,mFC[1]), hora: '7:00 AM' }; }
+  }
+  if(!fh){
+    // TIA: "Hasta El:\n2026-09-28" (ya en formato ISO) — sin hora, se define 10:00 AM
+    const mHastaEl = texto.match(/Hasta El:[\s\S]{0,40}?(\d{4}-\d{2}-\d{2})/i);
+    if(mHastaEl) fh = { fecha: mHastaEl[1], hora: '10:00' };
+  }
+  if(!fh){
+    // El Rosado: "FECHA DE 2026.09.25" — sin hora, se define 7:00 AM
+    const mFDE = texto.match(/FECHA DE\s+(\d{4}\.\d{2}\.\d{2})/i);
+    if(mFDE) fh = { fecha: mFDE[1].replace(/\./g,'-'), hora: '7:00 AM' };
+  }
+  if(fh){
+    resultado.fecha = fh.fecha && /^\d{4}-\d{2}-\d{2}$/.test(fh.fecha) ? fh.fecha : entNormalizarFecha(fh.fecha);
+    resultado.hora = entNormalizarHora(fh.hora);
+  }
+
+  // ---- Ítems ----
+  texto.split('\n').forEach(linea=>{
+    // Favorita: formato de ancho fijo — "01LO.PIZZA DE QUESO      240 g    786122    ...   20"
+    // (IT de 2 dígitos pegado a la descripción, sin espacio; Acabado es el código, Pedida la cantidad, siempre al final)
+    if(linea.length>=27 && /^\d{2}[A-ZÁ-Úa-zá-ú]/.test(linea)){
+      const resto = linea.slice(25).trim().split(/\s+/);
+      if(resto.length>=5){
+        const acabado = resto[2], pedida = resto[resto.length-1];
+        if(/^\d+$/.test(acabado) && /^\d+$/.test(pedida)){ resultado.items.push({ codigo_cliente: acabado, cantidad: parseInt(pedida,10) }); return; }
+      }
+    }
+    // TUTI: N° item, código, descripción…, cantidad, UM, costo, total
+    let m = linea.match(/^\s*\d+\s+(\d{5,10})\s+.*?(\d+)\s+[A-Za-zÁ-Úá-ú]{2,4}\s+[\d.,]+\s+[\d.,]+\s*$/);
+    if(m){ resultado.items.push({ codigo_cliente: m[1], cantidad: Math.round(parseFloat(m[2].replace(',','.'))) }); return; }
+    // LIRIS: código de barra, código del cliente, descripción…, cantidad, "Unidad X n", precio…
+    m = linea.match(/^\s*(\d{10,14})\s+([A-Za-z0-9\-]+)\s+.+?([\d.]+)\s+[A-Za-z]+\s*[Xx]\s*\d+/);
+    if(m){ resultado.items.push({ codigo_cliente: m[2], cantidad: Math.round(parseFloat(m[3])) }); return; }
+    // TIA: CANT(UNID) CANT(CAJAS) PALLET BASE PISOS DESCRIPCIÓN ESTADÍSTICO COSTO TOTAL — se toma CANT(CAJAS) y ESTADÍSTICO
+    m = linea.match(/^\s*(\d+)\s+(\d+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+(.+)\s+(\d{6,10})\s+([\d.]+)\s+([\d.]+)\s*$/);
+    if(m){ resultado.items.push({ codigo_cliente: m[7], cantidad: Math.round(parseFloat(m[2])) }); return; }
+    // El Rosado: ITEN, ARTICULO (código largo), descripción…, CANTIDAD (con coma decimal), COSTO, DESCTO1, DESCTO2
+    m = linea.match(/^\s*\d+\s+(\d{6,20})\s+.+\s+(\d+)[,.](\d{2})\s+[\d.,]+\s+[\d.,]+\s+[\d.,]+\s*$/);
+    if(m){ resultado.items.push({ codigo_cliente: m[1], cantidad: Math.round(parseFloat(m[2]+'.'+m[3])) }); return; }
+  });
+
+  return resultado;
+}
+function entResolverCodigoCliente(codigoCliente){
+  const match = (cacheCodigosCliente||[]).find(c=>c.codigo_cliente===codigoCliente);
+  if(!match) return { item_codigo:null, item_nombre:'(sin mapear: '+codigoCliente+')', medida:null };
+  const item = (cacheItems||[]).find(i=>i.codigo===match.item_codigo);
+  return { item_codigo: match.item_codigo, item_nombre: item ? item.nombre : match.item_codigo, medida: match.medida || (item?item.medida:null) };
+}
+
+async function renderEntregas(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="tabbar">
+      <button class="tabbtn ${EntState.tab==='calendario'?'active':''}" data-tab="calendario" onclick="entGoTab('calendario')">Calendario</button>
+      <button class="tabbtn ${EntState.tab==='registros'?'active':''}" data-tab="registros" onclick="entGoTab('registros')">Registros</button>
+    </div>
+    <div id="entRoot"><div class="empty-state">Cargando…</div></div>
+  `;
+  const tasks = [entLoad()];
+  if(!cacheItems || !cacheMedidas) tasks.push(invLoad(true));
+  if(!cacheCodigosCliente) tasks.push(entLoadCodigosCliente());
+  await Promise.all(tasks);
+  entRenderTabBody();
+}
+function entGoTab(tab){
+  EntState.tab = tab;
+  setActiveTab(tab);
+  entRenderTabBody();
+}
+function entRenderTabBody(){
+  if(EntState.tab === 'registros') return entRenderRegistrosTab();
+  return entRenderBody();
+}
+async function entLoad(){
+  const desde = EntState.semanaInicio;
+  const hasta = entSumarDias(desde, 6);
+  const { data, error } = await sb.from('entregas').select('*').gte('fecha', desde).lte('fecha', hasta).order('fecha').order('hora_entrega');
+  cacheEntregas = error ? [] : (data||[]);
+}
+let cacheCodigosCliente = null;
+async function entLoadCodigosCliente(){
+  const { data } = await sb.from('producto_codigos_cliente').select('*');
+  cacheCodigosCliente = data||[];
+}
+function entCambiarSemana(delta){
+  EntState.semanaInicio = entSumarDias(EntState.semanaInicio, delta*7);
+  entLoad().then(entRenderBody);
+}
+function entIrHoy(){
+  EntState.semanaInicio = entLunesDe(todayISO());
+  entLoad().then(entRenderBody);
+}
+function entRenderBody(){
+  const root = document.getElementById('entRoot');
+  if(!root) return;
+  const lunes = EntState.semanaInicio;
+  const dias = Array.from({length:7}, (_,i)=>entSumarDias(lunes, i));
+  const hoy = todayISO();
+  const domingo = dias[6];
+  const rangoTxt = ddMMyy(lunes) + ' – ' + ddMMyy(domingo);
+
+  // Las horas sin ninguna entrega esa semana (en cualquiera de los 7 días) se
+  // muestran compactas, para no desperdiciar espacio en franjas vacías (ej.
+  // de madrugada) — las que sí tienen algo agendado quedan a tamaño normal.
+  const horasConEventos = new Set();
+  (cacheEntregas||[]).forEach(e=>{
+    const h = parseInt((e.hora_entrega||'0').split(':')[0], 10);
+    if(!isNaN(h)) horasConEventos.add(h);
+  });
+  const alturas = Array.from({length:24}, (_,h)=> horasConEventos.has(h) ? ENT_ROW_H : ENT_ROW_H_COMPACTO);
+  const offsets = []; let acumulado = 0;
+  alturas.forEach(a=>{ offsets.push(acumulado); acumulado += a; });
+  EntState._alturas = alturas; EntState._offsets = offsets; // para que entRenderEventosDia posicione igual
+
+  root.innerHTML = `
+    <div class="ent-toolbar">
+      <div class="ent-toolbar-left">
+        <h2 style="margin:0;">📅 Entregas</h2>
+        <span class="sub" style="margin-left:8px;">${rangoTxt}</span>
+      </div>
+      <div class="ent-toolbar-right">
+        <button class="btn ghost" onclick="entCambiarSemana(-1)">← Semana anterior</button>
+        <button class="btn ghost" onclick="entIrHoy()">Hoy</button>
+        <button class="btn ghost" onclick="entCambiarSemana(1)">Semana siguiente →</button>
+        <button class="btn primary" style="--accent:var(--paradas)" onclick="entAbrirNueva('${hoy}')">+ Nueva entrega</button>
+        <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios documentos</button>
+      </div>
+    </div>
+    <div class="ent-calendar-wrap">
+      <div class="ent-calendar" style="grid-template-rows: 46px ${alturas.map(a=>a+'px').join(' ')};">
+        <div class="ent-corner"></div>
+        ${dias.map((f,i)=>{
+          const esFinde = i>=5;
+          const esHoy = f===hoy;
+          const [y,m,dd] = f.split('-');
+          return `<div class="ent-daycol-header ${esFinde?'ent-finde':''} ${esHoy?'ent-hoy':''}">
+            <span class="ent-dayname">${ENT_DIAS[i]}</span>
+            <span class="ent-daynum">${dd}/${m}</span>
+          </div>`;
+        }).join('')}
+        ${Array.from({length:24}, (_,h)=>`<div class="ent-hour-label ${horasConEventos.has(h)?'':'ent-hora-compacta'}" style="grid-row:${h+2};">${String(h).padStart(2,'0')}:00</div>`).join('')}
+        ${dias.map((f,i)=>{
+          const esFinde = i>=5;
+          return `<div class="ent-daycol ${esFinde?'ent-finde':''}" style="grid-column:${i+2}; grid-row:2 / span 24;">
+            ${Array.from({length:24},(_,h)=>`<div class="ent-hourline" style="top:${offsets[h]}px;"></div>`).join('')}
+            <div class="ent-events" id="entEvents_${f}"></div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  dias.forEach(f=>entRenderEventosDia(f));
+}
+// Oscurece un color hexadecimal (para la pestaña superior de la tarjeta).
+function entOscurecer(hex, factor){
+  const h = (hex||'#2563EB').replace('#','');
+  const n = parseInt(h.length===3 ? h.split('').map(c=>c+c).join('') : h, 16);
+  const f = 1 - (factor==null ? 0.28 : factor);
+  const r = Math.round(((n>>16)&255)*f), g = Math.round(((n>>8)&255)*f), b = Math.round((n&255)*f);
+  return '#' + [r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+function entRenderEventosDia(fecha){
+  const wrap = document.getElementById('entEvents_'+fecha);
+  if(!wrap) return;
+  const offsets = EntState._offsets || [];
+  const alturas = EntState._alturas || [];
+  const eventos = (cacheEntregas||[]).filter(e=>e.fecha===fecha);
+  // Si varias entregas caen en la misma hora del mismo día, se reparten el
+  // ancho de la columna en vez de taparse entre sí.
+  const porHora = {};
+  eventos.forEach(e=>{ const h = parseInt((e.hora_entrega||'0').split(':')[0],10)||0; (porHora[h]=porHora[h]||[]).push(e); });
+  wrap.innerHTML = eventos.map(e=>{
+    const [h1,m1] = (e.hora_entrega||'00:00').split(':').map(Number);
+    const grupo = porHora[h1] || [e];
+    const n = grupo.length, pos = grupo.indexOf(e);
+    const alturaHora = alturas[h1] != null ? alturas[h1] : ENT_ROW_H;
+    const top = (offsets[h1]||0) + (m1/60) * alturaHora + 2;
+    const alto = Math.max(70, alturaHora - 6);
+    const ancho = 100 / n;
+    const color = e.color || '#2563EB';
+    return `<div class="ent-card" style="top:${top}px;height:${alto}px;left:calc(${pos*ancho}% + 3px);width:calc(${ancho}% - 6px);--c:${escHtml(color)};--cd:${entOscurecer(color)};" onclick="entAbrirEditar('${e.id}')">
+      ${e.completado?'<div class="ent-card-tab">✓ Completado</div>':''}
+      <div class="ent-card-body">
+        <b>${escHtml(e.cliente||'(sin cliente)')}</b>
+        <span>${e.numero_oc?('OC '+escHtml(e.numero_oc)):'Sin OC'}</span>
+        <span>🕒 ${(e.hora_entrega||'').slice(0,5)}</span>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ---------------- Entregas: pestaña Registros (lista) ---------------- */
+let cacheEntregasRegistros = [];
+async function entRenderRegistrosTab(){
+  const root = document.getElementById('entRoot');
+  if(!root) return;
+  root.innerHTML = `
+    <div class="card" style="--accent:var(--paradas)">
+      <h2>📋 Registros de entregas</h2>
+      <div class="sub">Historial de entregas por rango de fecha, con buscador y descarga a Excel.</div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Desde</label><input type="date" id="entRegDesde" value="${escHtml(EntRegState.desde)}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="entRegHasta" value="${escHtml(EntRegState.hasta)}"></div>
+    </div>
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="entRegSearch" placeholder="Buscar por cliente, N° de OC o producto…" value="${escHtml(EntRegState.q)}">
+      </div>
+      <button class="btn" onclick="entExportarExcel()">⬇ Descargar Excel</button>
+      <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios documentos</button>
+    </div>
+    <div class="list-meta" id="entRegMeta">Cargando…</div>
+    <div class="reg-list" id="entRegList"></div>
+  `;
+  document.getElementById('entRegDesde').addEventListener('change', e=>{ EntRegState.desde=e.target.value; entLoadRegistros(); });
+  document.getElementById('entRegHasta').addEventListener('change', e=>{ EntRegState.hasta=e.target.value; entLoadRegistros(); });
+  document.getElementById('entRegSearch').addEventListener('input', e=>{ EntRegState.q=e.target.value; entRenderRegistrosList(); });
+  await entLoadRegistros();
+}
+async function entLoadRegistros(){
+  const { data, error } = await sb.from('entregas').select('*')
+    .gte('fecha', EntRegState.desde).lte('fecha', EntRegState.hasta)
+    .order('fecha',{ascending:false}).order('hora_entrega',{ascending:false});
+  cacheEntregasRegistros = error ? [] : (data||[]);
+  entRenderRegistrosList();
+}
+function entRegistrosFiltrados(){
+  let rows = cacheEntregasRegistros||[];
+  const q = (EntRegState.q||'').trim().toUpperCase();
+  if(q){
+    rows = rows.filter(e=>
+      (e.cliente||'').toUpperCase().includes(q) ||
+      (e.numero_oc||'').toUpperCase().includes(q) ||
+      (e.items||[]).some(it=>(it.item_nombre||'').toUpperCase().includes(q) || (it.item_codigo||'').toUpperCase().includes(q))
+    );
+  }
+  return rows;
+}
+function entRenderRegistrosList(){
+  const list = document.getElementById('entRegList');
+  const meta = document.getElementById('entRegMeta');
+  if(!list) return;
+  const rows = entRegistrosFiltrados();
+  if(meta) meta.textContent = rows.length + ' entrega(s) en este rango';
+  if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin entregas en este rango</div>'; return; }
+  list.innerHTML = rows.map(e=>{
+    const nItems = (e.items||[]).length;
+    const linea = (etq, val) => val ? `<div class="sub" style="margin-top:2px;"><b>${etq}:</b> ${escHtml(val)}</div>` : '';
+    return `<div class="reg-row" style="align-items:flex-start;">
+      <div class="rmain" onclick="entAbrirEditar('${e.id}')">
+        <div class="big">${escHtml(e.cliente||'(sin cliente)')}</div>
+        ${linea('Fecha', ddMMyy(e.fecha))}
+        ${linea('Hora de entrega', (e.hora_entrega||'').slice(0,5))}
+        ${linea('OC', e.numero_oc)}
+        ${linea('Dirección', e.direccion_entrega)}
+      </div>
+      <div class="rval"><span class="big">${nItems}</span><span class="sub">ítem(s)</span>${e.completado?'<span class="badge-completado" style="display:inline-block;margin-top:6px;">✓ Completado</span>':''}</div>
+    </div>`;
+  }).join('');
+}
+async function entExportarExcel(){
+  const rows = entRegistrosFiltrados();
+  if(!rows.length){ toast('No hay entregas para exportar en este rango'); return; }
+  toast('Generando Excel…');
+  const aoa = [['Fecha','Hora de entrega','Cliente','Dirección de entrega','N° Orden de Compra','Código producto','Producto','Cantidad','Medida','Observaciones']];
+  rows.forEach(e=>{
+    const items = (e.items||[]).length ? e.items : [{}];
+    items.forEach(it=>{
+      aoa.push([
+        e.fecha||'', (e.hora_entrega||'').slice(0,5), e.cliente||'', e.direccion_entrega||'', e.numero_oc||'',
+        it.item_codigo||'', it.item_nombre||'', it.cantidad!=null?Math.round(it.cantidad):'', it.medida||'', e.descripcion||''
+      ]);
+    });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = aoa[0].map(()=>({wch:20}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+  XLSX.writeFile(wb, 'Entregas_PROPIZZEC_'+EntRegState.desde+'_a_'+EntRegState.hasta+'.xlsx');
+  toast('Excel exportado');
+}
+
+/* ---------------- Carga masiva de documentos (varios a la vez) ---------------- */
+function entAbrirCargaMasiva(){
+  openModal(`
+    <h3>📎 Cargar varios documentos</h3>
+    <div class="sub">Selecciona todos los PDF o TXT de Órdenes de Compra que quieras cargar de una vez. Cada uno se agrega directo al calendario, listo para que los revises cuando quieras — si algo sale mal, lo corriges ahí mismo.</div>
+    <div class="field">
+      <input type="file" id="entMasivaInput" accept=".pdf,.txt,application/pdf,text/plain" multiple>
+    </div>
+    <div id="entMasivaStatus" class="sub" style="margin-top:8px;"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--paradas)" onclick="entProcesarCargaMasiva()">Cargar todos</button>
+    </div>
+  `);
+}
+async function entProcesarCargaMasiva(){
+  const input = document.getElementById('entMasivaInput');
+  const files = Array.from(input.files||[]);
+  if(!files.length){ toast('Selecciona al menos un archivo'); return; }
+  const status = document.getElementById('entMasivaStatus');
+  let ok = 0, fallidos = [], repetidos = [];
+  for(let i=0;i<files.length;i++){
+    const file = files[i];
+    if(status) status.textContent = `Leyendo ${i+1} de ${files.length}: ${file.name}…`;
+    try{
+      const texto = await entLeerArchivoComoTexto(file);
+      const datos = entParsearTextoOC(texto);
+      if(!datos.cliente && !datos.numero_oc && !datos.items.length){
+        fallidos.push(file.name + ' (no se reconoció el formato)');
+        continue;
+      }
+      // Si esa Orden de Compra ya está registrada, no se vuelve a ingresar.
+      if(datos.numero_oc){
+        const existente = await entBuscarOCExistente(datos.numero_oc);
+        if(existente){
+          repetidos.push(file.name + ' (OC ' + datos.numero_oc + ' ya estaba registrada, '+ddMMyy(existente.fecha)+')');
+          continue;
+        }
+      }
+      const items = datos.items.map(it=>{
+        const resuelto = entResolverCodigoCliente(it.codigo_cliente);
+        return { item_codigo: resuelto.item_codigo, item_nombre: resuelto.item_nombre, codigo_cliente: it.codigo_cliente, cantidad: it.cantidad, medida: resuelto.medida };
+      });
+      const fecha = datos.fecha || todayISO();
+      const payload = {
+        cliente: datos.cliente || '(sin identificar — revisar '+file.name+')',
+        direccion_entrega: datos.direccion || null,
+        fecha,
+        hora_entrega: datos.hora || '08:00',
+        numero_oc: datos.numero_oc || null,
+        color: await entColorAutomatico(fecha), // como cada inserción ya queda guardada antes de seguir con el siguiente archivo, esto evita repetir color incluso entre los del mismo lote
+        items
+      };
+      const { error } = await sb.from('entregas').insert(payload);
+      if(error){ fallidos.push(file.name + ' (' + error.message + ')'); continue; }
+      ok++;
+    }catch(err){
+      fallidos.push(file.name + ' (' + err.message + ')');
+    }
+  }
+  closeModal();
+  await entRefrescarTrasGuardar();
+  let msg = `Se cargaron ${ok} de ${files.length} entrega(s) — ya están en el calendario, revísalas cuando quieras.`;
+  if(repetidos.length) msg += ' Ya estaban registradas (no se duplicaron): ' + repetidos.join(', ');
+  if(fallidos.length) msg += ' No se pudieron leer: ' + fallidos.join(', ');
+  toast(msg);
+}
+
+/* ---------------- Formulario de entrega (nueva / editar) ---------------- */
+let EntFormItems = [];
+async function entAbrirNueva(fechaSugerida){
+  EntFormItems = [];
+  const colorSugerido = await entColorAutomatico(fechaSugerida);
+  entRenderFormulario(null, fechaSugerida, colorSugerido);
+}
+async function entAbrirEditar(id){
+  const e = (cacheEntregas||[]).find(x=>x.id===id) || (cacheEntregasRegistros||[]).find(x=>x.id===id);
+  if(!e) return;
+  const bloqueo = await despMensajeBloqueoEntrega(id);
+  if(bloqueo){ alert(bloqueo); return; }
+  EntFormItems = (e.items||[]).map(it=>({...it}));
+  entRenderFormulario(e, e.fecha);
+}
+let EntColorManual = false; // si el usuario ya eligió un color a mano, no se le cambia solo
+async function entRecalcularColorSugerido(){
+  if(EntColorManual) return;
+  const f = document.getElementById('entFecha'), c = document.getElementById('entColor');
+  if(!f || !c || !f.value) return;
+  c.value = await entColorAutomatico(f.value);
+}
+function entRenderFormulario(e, fechaSugerida, colorSugerido){
+  EntColorManual = false;
+  const esNueva = !e;
+  openModal(`
+    <h3>${esNueva?'Nueva entrega':'Editar entrega'}</h3>
+    <div class="field">
+      <label>📄 Cargar documento de la Orden de Compra (PDF o TXT, opcional)</label>
+      <input type="file" id="entPdfInput" accept=".pdf,.txt,application/pdf,text/plain" onchange="entCargarPDF(this, ${e?`'${e.id}'`:'null'})">
+      <div id="entPdfStatus" class="sub" style="margin-top:4px;"></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Cliente</label><input type="text" id="entCliente" placeholder="Ej: TUTI BODEGA GQUIL NORTE" value="${escHtml(e?e.cliente||'':'')}"></div>
+      <div class="field"><label>Color</label><input type="color" id="entColor" value="${escHtml(e?e.color:(colorSugerido||'#2563EB'))}" style="height:42px;padding:4px;" onchange="EntColorManual=true"></div>
+    </div>
+    <div class="field"><label>Dirección de entrega</label><input type="text" id="entDireccion" value="${escHtml(e?e.direccion_entrega||'':'')}"></div>
+    <div class="field-row">
+      <div class="field"><label>Fecha</label><input type="date" id="entFecha" value="${escHtml(e?e.fecha:fechaSugerida)}" ${e?'':'onchange="entRecalcularColorSugerido()"'}></div>
+      <div class="field"><label>Hora de entrega</label><input type="time" id="entHoraEntrega" value="${escHtml(e?(e.hora_entrega||'').slice(0,5):'09:00')}"></div>
+    </div>
+    <div class="field"><label>N° Orden de Compra</label><input type="text" id="entNumeroOC" value="${escHtml(e?e.numero_oc||'':'')}"></div>
+
+    <div class="field">
+      <label>Ítems de la orden</label>
+      <input type="text" id="entItemSearch" placeholder="Buscar producto para agregar…" oninput="entBuscarItemManual(this.value)">
+      <div class="search-results" id="entItemResults"></div>
+      <div id="entItemsList" style="margin-top:8px;"></div>
+    </div>
+
+    <div class="field"><label>Observaciones</label><input type="text" id="entDescripcion" value="${escHtml(e?e.descripcion||'':'')}"></div>
+
+    <div class="modal-actions">
+      ${esNueva?'':`<button class="btn ghost" onclick="entEliminar('${e.id}')" style="color:var(--danger);">🗑 Eliminar</button>`}
+      <button class="btn primary" style="--accent:var(--paradas)" onclick="${esNueva?'entGuardarNueva()':`entGuardarEditar('${e.id}')`}">Guardar</button>
+    </div>
+  `);
+  entRenderItemsList();
+}
+function entRenderItemsList(){
+  const wrap = document.getElementById('entItemsList');
+  if(!wrap) return;
+  if(!EntFormItems.length){ wrap.innerHTML = '<div class="empty-state">Sin ítems agregados</div>'; return; }
+  wrap.innerHTML = EntFormItems.map((it,idx)=>`
+    <div class="reg-row">
+      <div class="rmain"><span class="sup">${escHtml(it.item_codigo||'Sin mapear')}${it.codigo_cliente?(' · cód. cliente '+escHtml(it.codigo_cliente)):''}</span><span class="big">${escHtml(it.item_nombre||'')}</span></div>
+      <div class="rval"><span class="big">${Math.round(it.cantidad)}</span><span class="sub">${escHtml(it.medida||'')}</span><button class="redit" onclick="entQuitarItem(${idx})">✕</button></div>
+    </div>
+  `).join('');
+}
+function entQuitarItem(idx){
+  EntFormItems.splice(idx,1);
+  entRenderItemsList();
+}
+function entBuscarItemManual(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('entItemResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; return; }
+  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="entAbrirCantidadItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+// Al elegir un producto de la búsqueda, se pide la cantidad y la medida en
+// una ventanita aparte antes de agregarlo a la lista (antes se agregaba
+// directo con cantidad 1, sin dejar ponerla).
+// Antes de abrir la ventanita de cantidad, se guardan los valores que ya
+// estén escritos en el formulario de la entrega — porque al cerrar esa
+// ventanita, el sistema restaura una "foto" del formulario tomada ANTES de
+// abrirla, y esa foto no refleja lo que se haya escrito en los campos de
+// texto mientras tanto (solo lo que había al momento de sacarla).
+let EntFormValoresTemp = null;
+function entCapturarValoresFormulario(){
+  const val = id => { const el = document.getElementById(id); return el ? el.value : undefined; };
+  return {
+    entCliente: val('entCliente'), entColor: val('entColor'), entDireccion: val('entDireccion'),
+    entFecha: val('entFecha'), entHoraEntrega: val('entHoraEntrega'), entNumeroOC: val('entNumeroOC'),
+    entDescripcion: val('entDescripcion')
+  };
+}
+function entRestaurarValoresFormulario(valores){
+  if(!valores) return;
+  Object.keys(valores).forEach(id=>{
+    const el = document.getElementById(id);
+    if(el && valores[id]!==undefined) el.value = valores[id];
+  });
+}
+function entAbrirCantidadItem(codigo, nombre){
+  const item = (cacheItems||[]).find(i=>i.codigo===codigo);
+  EntFormValoresTemp = entCapturarValoresFormulario();
+  openModal(`
+    <h3>${escHtml(nombre)}</h3>
+    <div class="msub">${escHtml(codigo)}</div>
+    <div class="field-row">
+      <div class="field"><label>Cantidad</label><input type="text" inputmode="numeric" id="entCantItemVal" value="1"></div>
+      <div class="field"><label>Medida</label>
+        <select id="entMedidaItemVal">
+          ${(cacheMedidas||[]).map(m=>`<option value="${escHtml(m.nombre)}" ${item && item.medida===m.nombre ? 'selected':''}>${escHtml(m.nombre)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="entCancelarCantidadItem()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--paradas)" onclick="entConfirmarAgregarItem('${escHtml(codigo)}','${escHtml(nombre)}')">Agregar</button>
+    </div>
+  `);
+}
+function entCancelarCantidadItem(){
+  closeModal();
+  entRestaurarValoresFormulario(EntFormValoresTemp);
+}
+function entConfirmarAgregarItem(codigo, nombre){
+  const cantidad = Math.round(parseFloat((document.getElementById('entCantItemVal').value||'0').replace(',','.'))) || 0;
+  if(!cantidad){ toast('Ingresa la cantidad'); return; }
+  const medida = document.getElementById('entMedidaItemVal').value || null;
+  EntFormItems.push({ item_codigo: codigo, item_nombre: nombre, codigo_cliente: null, cantidad, medida });
+  closeModal();
+  entRestaurarValoresFormulario(EntFormValoresTemp);
+  const s = document.getElementById('entItemSearch'); if(s) s.value='';
+  const r = document.getElementById('entItemResults'); if(r) r.innerHTML='';
+  entRenderItemsList();
+}
+async function entCargarPDF(input, editandoId){
+  const file = input.files[0];
+  if(!file) return;
+  const status = document.getElementById('entPdfStatus');
+  if(status) status.textContent = 'Leyendo documento…';
+  try{
+    const texto = await entLeerArchivoComoTexto(file);
+    const datos = entParsearTextoOC(texto);
+    if(datos.numero_oc){
+      const existente = await entBuscarOCExistente(datos.numero_oc, editandoId);
+      if(existente){
+        if(status) status.textContent = `⚠ Esta Orden de Compra (${datos.numero_oc}) ya está registrada — cliente ${existente.cliente||''}, entrega ${ddMMyy(existente.fecha)}. No hace falta volver a ingresarla.`;
+        return;
+      }
+    }
+    if(datos.cliente) document.getElementById('entCliente').value = datos.cliente;
+    if(datos.direccion) document.getElementById('entDireccion').value = datos.direccion;
+    if(datos.fecha){ document.getElementById('entFecha').value = datos.fecha; if(!editandoId) await entRecalcularColorSugerido(); }
+    if(datos.hora) document.getElementById('entHoraEntrega').value = datos.hora;
+    if(datos.numero_oc) document.getElementById('entNumeroOC').value = datos.numero_oc;
+    datos.items.forEach(it=>{
+      const resuelto = entResolverCodigoCliente(it.codigo_cliente);
+      EntFormItems.push({ item_codigo: resuelto.item_codigo, item_nombre: resuelto.item_nombre, codigo_cliente: it.codigo_cliente, cantidad: it.cantidad, medida: resuelto.medida });
+    });
+    entRenderItemsList();
+    const sinMapear = datos.items.filter(it=>!entResolverCodigoCliente(it.codigo_cliente).item_codigo).length;
+    if(status) status.textContent = `Se leyeron ${datos.items.length} ítem(s)` + (sinMapear ? ` — ${sinMapear} sin relacionar a un producto (revísalos abajo, o agrégalos en Configuración → Códigos de Cliente)` : ' — revisa los datos antes de guardar');
+  }catch(err){
+    if(status) status.textContent = 'No se pudo leer el documento: ' + err.message;
+  }
+}
+function entLeerCamposFormulario(){
+  return {
+    cliente: document.getElementById('entCliente').value.trim() || null,
+    color: document.getElementById('entColor').value,
+    direccion_entrega: document.getElementById('entDireccion').value.trim() || null,
+    fecha: document.getElementById('entFecha').value,
+    hora_entrega: document.getElementById('entHoraEntrega').value,
+    numero_oc: document.getElementById('entNumeroOC').value.trim() || null,
+    descripcion: document.getElementById('entDescripcion').value.trim() || null,
+    items: EntFormItems
+  };
+}
+async function entRefrescarTrasGuardar(){
+  // Se refrescan las dos vistas (Calendario y Registros), aunque solo se esté
+  // viendo una — si no, borrar o guardar algo desde Registros dejaba el
+  // Calendario con datos viejos hasta recargar la página entera.
+  await Promise.all([entLoad(), entLoadRegistros()]);
+  if(EntState.tab === 'registros') entRenderRegistrosList();
+  else entRenderBody();
+}
+async function entGuardarNueva(){
+  const payload = entLeerCamposFormulario();
+  if(!payload.cliente){ toast('Escribe el cliente'); return; }
+  if(!payload.fecha || !payload.hora_entrega){ toast('Completa fecha y hora de entrega'); return; }
+  if(payload.numero_oc){
+    const existente = await entBuscarOCExistente(payload.numero_oc);
+    if(existente){ toast(`Esta Orden de Compra (${payload.numero_oc}) ya está registrada — cliente ${existente.cliente||''}, entrega ${ddMMyy(existente.fecha)}. No hace falta ingresarla otra vez.`); return; }
+  }
+  const { error } = await sb.from('entregas').insert(payload);
+  if(error){ toast('Error: '+error.message); return; }
+  closeModal();
+  await entRefrescarTrasGuardar();
+  toast('Entrega agregada');
+}
+async function entGuardarEditar(id){
+  const bloqueo = await despMensajeBloqueoEntrega(id);
+  if(bloqueo){ alert(bloqueo); return; }
+  const payload = entLeerCamposFormulario();
+  if(!payload.cliente){ toast('Escribe el cliente'); return; }
+  const { error } = await sb.from('entregas').update(payload).eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  closeModal();
+  await entRefrescarTrasGuardar();
+  toast('Entrega actualizada');
+}
+async function entEliminar(id){
+  const bloqueo = await despMensajeBloqueoEntrega(id);
+  if(bloqueo){ alert(bloqueo); return; }
+  if(!confirm('¿Eliminar esta entrega?')) return;
+  const { error } = await sb.from('entregas').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  closeModal();
+  await entRefrescarTrasGuardar();
+  toast('Entrega eliminada');
+}
+
 async function renderCalidad(){
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -6351,6 +7803,8 @@ async function monToggleCandado(id){
   const reg = (MonRegState.rows||[]).find(r=>r.id===id);
   if(!reg) return;
   if(reg.locked){
+    const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
+    if(bloqueo){ alert(bloqueo); return; }
     // Abrir: vuelve a dejarlo disponible para editar en Producción Operativa (no toca Kardex todavía).
     if(!confirm('¿Abrir este registro para editarlo en Producción Operativa?')) return;
     const { error } = await sb.from('registro_produccion').update({ locked:false }).eq('id', id);
@@ -6395,6 +7849,8 @@ async function abrirMonRegistroDesdeCandado(id){
 async function monRegDeleteFromList(id){
   const reg = (MonRegState.rows||[]).find(r=>r.id===id);
   if(!reg) return;
+  const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
+  if(bloqueo){ alert(bloqueo); return; }
   if(!confirm('¿Eliminar este registro permanentemente? También se eliminará de Cronograma/Registros de Planificación y se revertirá su Kardex. Esta acción no se puede deshacer.')) return;
   const cr = reg.cronograma_id ? { id: reg.cronograma_id, orden_produccion: reg.orden_produccion } : null;
   if(cr) await kardexRevertirProduccion(cr);
@@ -6547,6 +8003,11 @@ async function monRegToggleLocked(){
   const reg = MonRegState.editing;
   if(!reg) return;
   const nuevoValor = !reg.locked;
+  if(!nuevoValor){
+    // se está reabriendo un registro cerrado
+    const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
+    if(bloqueo){ alert(bloqueo); return; }
+  }
   if(nuevoValor && !confirm('¿Cerrar este registro?')) return;
   const { error } = await sb.from('registro_produccion').update({ locked: nuevoValor }).eq('id', reg.id);
   if(error){ toast('Error: '+error.message); return; }
@@ -6587,6 +8048,8 @@ async function monRegToggleLocked(){
 async function monRegDelete(){
   const reg = MonRegState.editing;
   if(!reg) return;
+  const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
+  if(bloqueo){ alert(bloqueo); return; }
   if(!confirm('¿Eliminar este registro permanentemente? Esta acción no se puede deshacer.')) return;
   const { error } = await sb.from('registro_produccion').delete().eq('id', reg.id);
   if(error){ toast('Error: '+error.message); return; }
@@ -7017,6 +8480,7 @@ async function renderConfiguracion(){
   cacheMetasSellado = metasData || [];
   const { data: personalData } = await sb.from('personal_planificacion').select('*').order('area').order('nombre');
   cachePersonalPlanificacion = personalData || [];
+  await entLoadCodigosCliente();
   cfgRenderBody();
 }
 let cacheUsuariosArea = null;
@@ -7308,10 +8772,118 @@ async function cfgRenderBody(){
     html += cfgTwoFieldCard({title:'Destinos y clientes (Despacho)', colorVar:'--paradas', table:'despacho_destinos', rows:cacheDespDestinos||[], campo1:{key:'direccion',label:'Destino',placeholder:'Dirección de destino'}, campo2:{key:'cliente',label:'Cliente',placeholder:'Cliente asociado'}});
   }
   if(esAdmin){
+    html += cfgCodigosClienteCard();
     html += cfgHorariosCard();
     html += cfgUsuariosCard();
   }
   app.innerHTML = html;
+}
+function cfgCodigosClienteCard(){
+  const filas = cacheCodigosCliente||[];
+  return `<div class="card" style="--accent:var(--paradas)">
+    <h2>Códigos de Cliente por Producto</h2>
+    <div class="sub">Cada cliente puede nombrar un mismo producto nuestro con un código distinto (ej. en su Orden de Compra). Regístralos aquí para que, al leer un PDF en Entregas, el sistema reconozca de qué producto se trata.</div>
+    <div class="field">
+      <label>Nuestro producto (PT)</label>
+      <input type="text" id="cfgCodClienteItemSearch" placeholder="Buscar por código o nombre…" oninput="cfgCodClienteBuscarItem(this.value)">
+      <div class="search-results" id="cfgCodClienteItemResults"></div>
+      <div id="cfgCodClienteItemElegido" class="readonly-box" style="margin-top:8px;display:none;"></div>
+    </div>
+    <div class="field-row">
+      <input type="text" id="cfgCodClienteCodigo" placeholder="Código que usa el cliente (ej. 40002021)" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
+      <select id="cfgCodClienteMedida" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
+        <option value="">Sin medida</option>
+        ${(cacheMedidas||[]).map(m=>`<option value="${escHtml(m.nombre)}">${escHtml(m.nombre)}</option>`).join('')}
+      </select>
+      <input type="number" min="1" id="cfgCodClienteUxC" placeholder="Unid. por caja" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
+      <input type="text" id="cfgCodClienteNombre" placeholder="Cliente (opcional, ej. TUTI)" style="flex:1;padding:9px 10px;border:1px solid var(--line);border-radius:8px;">
+      <button class="btn" onclick="cfgAddCodigoCliente()">+ Añadir</button>
+    </div>
+    <div class="catalog-mini">
+      ${filas.length ? filas.map(f=>{
+        const item = (cacheItems||[]).find(i=>i.codigo===f.item_codigo);
+        return `<div class="reg-row">
+          <div class="rmain" onclick="cfgAbrirEditarCodigoCliente('${f.id}')"><span class="sup">${escHtml(f.item_codigo)}${f.cliente?(' · '+escHtml(f.cliente)):''}</span><span class="big">${escHtml(item?item.nombre:f.item_codigo)}</span><span class="sub">Código del cliente: ${escHtml(f.codigo_cliente)}${f.medida?(' · Medida: '+escHtml(f.medida)):''}${f.unidades_por_caja?(' · '+f.unidades_por_caja+' unid./caja'):''}</span></div>
+          <div class="rval"><button class="redit" onclick="cfgDeleteCodigoCliente('${f.id}')">✕</button></div>
+        </div>`;
+      }).join('') : '<div class="empty-state">Sin códigos registrados todavía</div>'}
+    </div>
+  </div>`;
+}
+let CfgCodClienteItemState = null;
+function cfgCodClienteBuscarItem(q){
+  q = (q||'').trim().toUpperCase();
+  const results = document.getElementById('cfgCodClienteItemResults');
+  if(!results) return;
+  if(!q){ results.innerHTML=''; return; }
+  const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="cfgCodClienteElegirItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
+}
+function cfgCodClienteElegirItem(codigo, nombre){
+  CfgCodClienteItemState = { codigo, nombre };
+  const s = document.getElementById('cfgCodClienteItemSearch'); if(s) s.value='';
+  const r = document.getElementById('cfgCodClienteItemResults'); if(r) r.innerHTML='';
+  const box = document.getElementById('cfgCodClienteItemElegido');
+  if(box){ box.style.display='flex'; box.style.justifyContent='space-between'; box.style.alignItems='center'; box.innerHTML = `<span><b>${escHtml(codigo)}</b> — ${escHtml(nombre)}</span><button class="redit" onclick="CfgCodClienteItemState=null;document.getElementById('cfgCodClienteItemElegido').style.display='none';">✕</button>`; }
+}
+async function cfgAddCodigoCliente(){
+  if(!CfgCodClienteItemState){ toast('Busca y elige el producto primero'); return; }
+  const codigoCliente = document.getElementById('cfgCodClienteCodigo').value.trim();
+  if(!codigoCliente){ toast('Escribe el código que usa el cliente'); return; }
+  const medida = document.getElementById('cfgCodClienteMedida').value || null;
+  const uxcTxt = document.getElementById('cfgCodClienteUxC').value.trim();
+  const unidades_por_caja = uxcTxt ? parseInt(uxcTxt,10) : null;
+  const cliente = document.getElementById('cfgCodClienteNombre').value.trim() || null;
+  const { error } = await sb.from('producto_codigos_cliente').insert({ item_codigo: CfgCodClienteItemState.codigo, codigo_cliente: codigoCliente, medida, unidades_por_caja, cliente });
+  if(error){ toast('Error: '+error.message); return; }
+  await entLoadCodigosCliente();
+  CfgCodClienteItemState = null;
+  cfgRenderBody();
+  toast('Código agregado');
+}
+async function cfgDeleteCodigoCliente(id){
+  if(!confirm('¿Eliminar este código?')) return;
+  const { error } = await sb.from('producto_codigos_cliente').delete().eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  await entLoadCodigosCliente();
+  cfgRenderBody();
+  toast('Código eliminado');
+}
+function cfgAbrirEditarCodigoCliente(id){
+  const f = (cacheCodigosCliente||[]).find(x=>x.id===id);
+  if(!f) return;
+  const item = (cacheItems||[]).find(i=>i.codigo===f.item_codigo);
+  openModal(`
+    <h3>Editar código de cliente</h3>
+    <div class="field"><label>Nuestro producto</label><input type="text" value="${escHtml(f.item_codigo)} — ${escHtml(item?item.nombre:'')}" disabled></div>
+    <div class="field"><label>Código que usa el cliente</label><input type="text" id="cfgCodClienteEditCodigo" value="${escHtml(f.codigo_cliente)}"></div>
+    <div class="field"><label>Medida</label>
+      <select id="cfgCodClienteEditMedida">
+        <option value="">Sin medida</option>
+        ${(cacheMedidas||[]).map(m=>`<option value="${escHtml(m.nombre)}" ${f.medida===m.nombre?'selected':''}>${escHtml(m.nombre)}</option>`).join('')}
+      </select>
+    </div>
+    <div class="field"><label>Unidades por caja</label><input type="number" min="1" id="cfgCodClienteEditUxC" value="${f.unidades_por_caja||''}" placeholder="Ej. 24"></div>
+    <div class="field"><label>Cliente</label><input type="text" id="cfgCodClienteEditNombre" value="${escHtml(f.cliente||'')}"></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="cfgDeleteCodigoCliente('${f.id}')" style="color:var(--danger);">🗑 Eliminar</button>
+      <button class="btn primary" style="--accent:var(--paradas)" onclick="cfgGuardarEditarCodigoCliente('${f.id}')">Guardar</button>
+    </div>
+  `);
+}
+async function cfgGuardarEditarCodigoCliente(id){
+  const codigoCliente = document.getElementById('cfgCodClienteEditCodigo').value.trim();
+  if(!codigoCliente){ toast('Escribe el código que usa el cliente'); return; }
+  const medida = document.getElementById('cfgCodClienteEditMedida').value || null;
+  const uxcTxt = document.getElementById('cfgCodClienteEditUxC').value.trim();
+  const unidades_por_caja = uxcTxt ? parseInt(uxcTxt,10) : null;
+  const cliente = document.getElementById('cfgCodClienteEditNombre').value.trim() || null;
+  const { error } = await sb.from('producto_codigos_cliente').update({ codigo_cliente: codigoCliente, medida, unidades_por_caja, cliente }).eq('id', id);
+  if(error){ toast('Error: '+error.message); return; }
+  closeModal();
+  await entLoadCodigosCliente();
+  cfgRenderBody();
+  toast('Código actualizado');
 }
 async function cfgAddCatalogo(tipo){
   const input = document.getElementById('cfg_new_'+tipo);
@@ -7427,10 +8999,28 @@ const CRONOGRAMA_ME_EXTRA_NOMBRES = [
   'COPA SOUFFLE 2 OZ NEGRO',
   'TAPA SOUFFLE 1.5 OZ'
 ].map(normalizaNombre);
+// La "Materia Prima" no siempre tiene la misma abreviatura interna (depende de
+// cómo esté configurada en Configuración → Tipos), así que en vez de comparar
+// contra un texto fijo, se resuelve el tipo real del ítem y se compara por su
+// etiqueta — así funciona sin importar qué abreviatura tenga configurada.
+function esTipoMateriaPrima(item){
+  if(!item) return false;
+  const tipoInfo = (cacheTipos||[]).find(t=>t.abreviatura===item.tipo);
+  const etiqueta = ((tipoInfo ? tipoInfo.etiqueta : item.tipo) || '').toUpperCase();
+  return etiqueta.includes('MATERIA') && etiqueta.includes('PRIMA');
+}
+function productoTieneFormulaPropia(itemCodigo){
+  return (cacheFormulacion||[]).some(f=>f.cod_producto_principal===itemCodigo);
+}
 function esIngredienteDeCronograma(item){
   if(!item) return false;
-  if(item.tipo==='MATERIA_PRIMA') return true;
-  return nombreEnLista(item, CRONOGRAMA_ME_EXTRA_NOMBRES);
+  if(esTipoMateriaPrima(item)) return true;
+  if(nombreEnLista(item, CRONOGRAMA_ME_EXTRA_NOMBRES)) return true;
+  // Un producto que a su vez tiene su propia fórmula (ej. la masa dentro de
+  // los discos, o la bechamel/boloñesa dentro de la lasaña) también cuenta
+  // como ingrediente — se produce en su propia orden (independiente, con su
+  // propio Kardex) pero se muestra junto a la orden principal en pantalla.
+  return productoTieneFormulaPropia(item.codigo);
 }
 function selEsProductoSellable(item){
   if(!item) return false;
@@ -7459,7 +9049,7 @@ async function selLoad(force){
   if(!sb) return;
   const tasks = [];
   if(force || !cacheItems) tasks.push(invLoad(true));
-  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=r.data||[]));
+  if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=(r.data||[]).map(f=>({...f, cod_producto_principal:normalizarCodigo(f.cod_producto_principal), cod_componente:normalizarCodigo(f.cod_componente)}))));
   if(force || !cacheCatalogosSellado) tasks.push(sb.from('catalogos').select('*').eq('tipo','responsable_sellado').eq('activo',true).then(r=>cacheCatalogosSellado=r.data||[]));
   if(force || !cacheMetasSellado) tasks.push(sb.from('metas_sellado').select('*').then(r=>cacheMetasSellado=r.data||[]));
   tasks.push(sb.from('catalogos').select('id,nombre').eq('tipo','sellado_tipo_parada').eq('activo',true).order('nombre').then(r=>{
@@ -7489,6 +9079,7 @@ async function selLoad(force){
 // Productos terminados ya aprobados en Monitoreo, con la cantidad que aún falta
 // sellar (producido menos lo ya sellado hasta ahora, para ese mismo lote).
 let cacheSelladoPendientes = [];
+let cacheSelladoPorLote = {}; // "item_codigo|lote" -> cantidad ya sellada de verdad
 function productoTieneCajas(itemCodigo){
   return (cacheFormulacion||[]).some(f=>{
     if(f.cod_producto_principal!==itemCodigo) return false;
@@ -7500,38 +9091,46 @@ async function selCargarPendientesSellado(){
   // Ahora se toma directo de Cronograma (en cuanto se agrega la orden), sin
   // esperar a que esté producida ni aprobada en Monitoreo — usa la cantidad
   // real si ya se produjo, y si no, la cantidad programada como referencia.
-  const { data: ordenes } = await sb.from('cronograma')
-    .select('item_codigo, lote, cantidad_real, cantidad_programada, fecha')
-    .order('fecha', {ascending:false})
-    .limit(500);
-  if(!ordenes || !ordenes.length){ cacheSelladoPendientes = []; return; }
-  const { data: sellados } = await sb.from('sellado_registros').select('items').limit(3000);
+  // Se acota por fecha (últimos 60 días) en vez de por cantidad de filas —
+  // un límite fijo de filas se queda corto cuando ya hay mucho historial, y
+  // deja pendientes fuera del cálculo sin ningún aviso.
+  const desde60 = entSumarDias(todayISO(), -60);
+  // Primero se calcula lo sellado (y se guarda en caché), porque Despacho lo
+  // necesita aunque no haya órdenes recientes en Cronograma.
+  const { data: sellados } = await sb.from('sellado_registros').select('items').gte('fecha', desde60);
   const selladoPorClave = {};
   (sellados||[]).forEach(row=>{
     (row.items||[]).forEach(it=>{
       if(it.es_parada || !it.item_codigo || it.item_codigo==='N/A' || !it.cantidad) return;
-      const clave = it.item_codigo+'|'+(it.lote||'');
+      const clave = normalizaNombre(it.item_codigo)+'|'+normalizaNombre(it.lote||'');
       selladoPorClave[clave] = (selladoPorClave[clave]||0) + Number(it.cantidad||0);
     });
   });
+  cacheSelladoPorLote = selladoPorClave; // cuánto se ha sellado de verdad por ítem+lote, esté o no ya completo — lo usa Despacho para no ofrecer más de lo que realmente está sellado
+  const { data: ordenes } = await sb.from('cronograma')
+    .select('item_codigo, lote, cantidad_real, cantidad_programada, fecha')
+    .gte('fecha', desde60)
+    .order('fecha', {ascending:false});
+  if(!ordenes || !ordenes.length){ cacheSelladoPendientes = []; return; }
   const porClave = {};
   ordenes.forEach(p=>{
     if(!productoTieneCajas(p.item_codigo)) return; // solo productos con caja definida en su fórmula
     const cantidadReal = p.cantidad_real!=null ? Number(p.cantidad_real) : (p.cantidad_programada!=null ? Number(p.cantidad_programada) : 0);
     if(cantidadReal<=0) return;
-    const clave = p.item_codigo+'|'+(p.lote||'');
+    const clave = normalizaNombre(p.item_codigo)+'|'+normalizaNombre(p.lote||'');
     if(!porClave[clave]) porClave[clave] = { item_codigo:p.item_codigo, lote:p.lote, producido:0 };
     porClave[clave].producido += cantidadReal;
   });
   const pendientes = [];
   Object.values(porClave).forEach(p=>{
-    const yaSellado = selladoPorClave[p.item_codigo+'|'+(p.lote||'')] || 0;
+    const yaSellado = selladoPorClave[normalizaNombre(p.item_codigo)+'|'+normalizaNombre(p.lote||'')] || 0;
     const pendiente = Math.round((p.producido - yaSellado)*10000)/10000;
     if(pendiente > 0.001){
       const item = (cacheItems||[]).find(i=>i.codigo===p.item_codigo);
       pendientes.push({ item_codigo:p.item_codigo, item_nombre: item?item.nombre:p.item_codigo, lote:p.lote, pendiente, producido:p.producido, medida: item?item.medida:'' });
     }
   });
+  cacheSelladoPorLote = selladoPorClave; // cuánto se ha sellado de verdad por ítem+lote, esté o no ya completo — lo usa Despacho para no ofrecer más de lo que realmente está sellado
   cacheSelladoPendientes = pendientes;
 }
 async function selCambiarFecha(fecha){
@@ -7545,6 +9144,7 @@ async function renderSellado(){
   app.innerHTML = `
     <div class="tabbar">
       <button class="tabbtn ${SelTabState.tab==='actividades'?'active':''}" data-tab="actividades" onclick="selGoTab('actividades')">Actividades</button>
+      <button class="tabbtn ${SelTabState.tab==='controldespacho'?'active':''}" data-tab="controldespacho" onclick="selGoTab('controldespacho')">Control de despacho</button>
       <button class="tabbtn ${SelTabState.tab==='ajuste'?'active':''}" data-tab="ajuste" onclick="selGoTab('ajuste')">Ajuste</button>
       <button class="tabbtn ${SelTabState.tab==='registros'?'active':''}" data-tab="registros" onclick="selGoTab('registros')">Registros</button>
     </div>
@@ -7554,7 +9154,25 @@ async function renderSellado(){
   selRenderRootBody();
 }
 function selGoTab(tab){ SelTabState.tab = tab; setActiveTab(tab); selRenderRootBody(); }
+async function selRenderControlDespacho(){
+  const root = document.getElementById('selRoot');
+  if(!root) return;
+  root.innerHTML = `
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="selDespSearch" placeholder="Buscar por cliente, N° de OC o producto…" oninput="selDespFiltrar(this.value)">
+      </div>
+    </div>
+    <div class="reg-list" id="selDespLista"><div class="empty-state">Cargando…</div></div>
+  `;
+  if(!cacheCodigosCliente) await entLoadCodigosCliente();
+  SelDespSemana = await despEntListaPendientes();
+  despEntRenderLista('selDespLista', SelDespSemana, '');
+}
+function selDespFiltrar(q){ despEntRenderLista('selDespLista', SelDespSemana||[], q); }
+let SelDespSemana = [];
 function selRenderRootBody(){
+  if(SelTabState.tab === 'controldespacho') return selRenderControlDespacho();
   if(SelTabState.tab === 'registros') return renderSelladoRegistrosTab();
   if(SelTabState.tab === 'ajuste') return renderSelladoAjusteTab();
   return selRenderActividades();
@@ -7577,6 +9195,25 @@ async function nextSelladoCode(prefijo){
       if(m) maxN = parseInt(m[1],10);
     }
   }catch(e){ console.error('No se pudo consultar la secuencia de sellado', e); }
+  return prefijo + String(maxN+1).padStart(5,'0');
+}
+// A diferencia de nextSelladoCode (que es UNO por sesión/máquina/día), esto da
+// un código distinto por cada producto o lote que se empieza a sellar — se
+// busca el máximo dentro de los últimos 60 días, recorriendo los ítems ya
+// guardados (el código de cada ítem vive dentro del JSON, no en una columna).
+async function nextSelladoItemCode(prefijo){
+  let maxN = 0;
+  try{
+    const desde60 = entSumarDias(todayISO(), -60);
+    const { data } = await sb.from('sellado_registros').select('items').gte('fecha', desde60);
+    const re = new RegExp('^'+prefijo+'(\\d+)$');
+    (data||[]).forEach(row=>{
+      (row.items||[]).forEach(it=>{
+        const m = it.codigo_item ? re.exec(it.codigo_item) : null;
+        if(m){ const n = parseInt(m[1],10); if(n>maxN) maxN = n; }
+      });
+    });
+  }catch(e){ console.error('No se pudo consultar la secuencia de ítems de sellado', e); }
   return prefijo + String(maxN+1).padStart(5,'0');
 }
 function selRenderActividades(){
@@ -7602,11 +9239,24 @@ function selRenderActividades(){
   selRenderMachinesGrid();
 }
 async function selAgregarSelladora(){
-  const n = SELLADO_ACTIVIDADES.filter(a=>a.esSellado).length + 1;
+  // Al eliminar una selladora solo se desactiva (para no perder su historial),
+  // así que su nombre interno sigue existiendo en la base de datos. Por eso,
+  // aquí se busca el primer número libre entre las ACTIVAS (1, 2, 3…) y, si
+  // esa selladora ya existió antes y estaba eliminada, se reactiva en vez de
+  // intentar crear otra con el mismo nombre (que la base rechazaba).
+  const activas = new Set(SELLADO_ACTIVIDADES.filter(a=>a.esSellado).map(a=>a.key));
+  let n = 1;
+  while(activas.has('SELLADORA'+n)) n++;
   const key = 'SELLADORA'+n;
-  const { error } = await sb.from('sellado_config_actividades').insert({
-    key, label:'Selladora '+n, icon:'📦', prefijo:'SE', nombre_actividad:'SELLADO', es_sellado:true, orden: 100+n
-  });
+  const { data: existentes } = await sb.from('sellado_config_actividades').select('id, key, activo').eq('key', key).limit(1);
+  let error;
+  if(existentes && existentes.length){
+    ({ error } = await sb.from('sellado_config_actividades').update({ activo:true, label:'Selladora '+n, orden:100+n }).eq('id', existentes[0].id));
+  } else {
+    ({ error } = await sb.from('sellado_config_actividades').insert({
+      key, label:'Selladora '+n, icon:'📦', prefijo:'SE', nombre_actividad:'SELLADO', es_sellado:true, orden: 100+n
+    }));
+  }
   if(error){ toast('Error: '+error.message); return; }
   await selLoad(true);
   toast('Selladora '+n+' agregada');
@@ -7933,9 +9583,13 @@ async function selAddItem(tipo, esLimpieza, item, extra){
   const previos = (row.items||[]).filter(it=>it.item_codigo===codigoItem);
   const ultimoResp = previos.length ? previos[previos.length-1].responsable : '';
   const metaGuardada = (!esLimpieza && meta.esSellado) ? ((cacheMetasSellado||[]).find(m=>m.item_codigo===codigoItem)||{}).meta_uh || 0 : null;
+  // Cada producto/lote que se empieza a sellar recibe su propio código
+  // secuencial (distinto del código de la sesión de la máquina/día).
+  const codigoSecuencial = esLimpieza ? null : await nextSelladoItemCode(meta.prefijo);
   const ahoraIso = new Date().toISOString();
   const nuevo = {
     id: 'it_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    codigo_item: codigoSecuencial,
     item_codigo: codigoItem,
     item_nombre: esLimpieza ? 'N/A' : item.nombre,
     lote: esLimpieza ? 'N/A' : ((extra && extra.lote) ? extra.lote : ddMMyy(todayISO())),
@@ -8552,6 +10206,17 @@ function cajasDeFormula(itemCodigoProducto, cantidadReferencia){
   }).filter(Boolean);
 }
 function openSelItemModal(tipo, itemId, finalizando){
+  const itRevisar = selFindItem(tipo, itemId);
+  // Un ítem ya finalizado de un lote que ya se despachó no se puede volver a editar.
+  if(itRevisar && !finalizando && itRevisar.hora_fin && !itRevisar.es_parada && itRevisar.item_codigo && itRevisar.item_codigo!=='N/A'){
+    despMensajeBloqueoLote(itRevisar.item_codigo, itRevisar.lote).then(m=>{
+      if(m) alert(m); else openSelItemModalNormal(tipo, itemId, finalizando);
+    });
+    return;
+  }
+  openSelItemModalNormal(tipo, itemId, finalizando);
+}
+function openSelItemModalNormal(tipo, itemId, finalizando){
   const it = selFindItem(tipo, itemId);
   if(!it) return;
   const meta = SELLADO_ACTIVIDADES.find(a=>a.key===tipo);
@@ -8930,7 +10595,7 @@ function selRegFlatten(){
       flat.push({
         row_id: row.id, item_id: it.id, comprobantes: [],
         fecha: row.fecha, tipo_actividad: row.tipo_actividad, nombre_actividad: row.nombre_actividad,
-        codigo_actividad: row.codigo_actividad, estado: row.estado,
+        codigo_actividad: it.codigo_item || row.codigo_actividad, estado: row.estado,
         item_codigo: it.es_parada ? 'PARADA' : it.item_codigo,
         item_nombre: it.es_parada ? ('Parada: '+(it.actividad_parada||'')) : it.item_nombre,
         lote: it.lote,
@@ -9009,11 +10674,15 @@ function selRenderRegistrosList(){
     </div>
   `).join('');
 }
-function selRegVerificar(rowId, itemId){
+async function selRegVerificar(rowId, itemId){
   const row = (SelRegState.rows||[]).find(r=>r.id===rowId);
   if(!row) return;
   const it = (row.items||[]).find(i=>i.id===itemId);
   if(!it) return;
+  if(row.tipo_actividad !== 'REETRABAJO' && !it.es_parada && it.item_codigo && it.item_codigo!=='N/A'){
+    const bloqueo = await despMensajeBloqueoLote(it.item_codigo, it.lote);
+    if(bloqueo){ alert(bloqueo); return; }
+  }
   if(row.tipo_actividad === 'REETRABAJO'){
     openModal(`
       <h3>${escHtml(row.nombre_actividad)}</h3>
@@ -9102,6 +10771,10 @@ async function selRegEliminar(rowId, itemId){
   const it = (row.items||[]).find(i=>i.id===itemId);
   if(!it) return;
   const esReetrabajo = row.tipo_actividad === 'REETRABAJO';
+  if(!esReetrabajo && !it.es_parada && it.item_codigo && it.item_codigo!=='N/A'){
+    const bloqueo = await despMensajeBloqueoLote(it.item_codigo, it.lote);
+    if(bloqueo){ alert(bloqueo); return; }
+  }
   const msg = esReetrabajo
     ? '¿Eliminar este ajuste? Esto también revertirá los movimientos que generó en el Kardex.'
     : '¿Eliminar este registro?';
@@ -10012,6 +11685,7 @@ async function renderDespacho(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="tabbar">
+      <button class="tabbtn ${DespState.tab==='despachos'?'active':''}" data-tab="despachos" onclick="despGoTab('despachos')">Despachos</button>
       <button class="tabbtn ${DespState.tab==='liberacion'?'active':''}" data-tab="liberacion" onclick="despGoTab('liberacion')">Liberación de producto</button>
       <button class="tabbtn ${DespState.tab==='registros'?'active':''}" data-tab="registros" onclick="despGoTab('registros')">Registros</button>
     </div>
@@ -10021,7 +11695,26 @@ async function renderDespacho(){
   despRenderRootBody();
 }
 function despGoTab(tab){ DespState.tab = tab; setActiveTab(tab); despRenderRootBody(); }
+async function despRenderDespachosTab(){
+  const root = document.getElementById('despRoot');
+  if(!root) return;
+  root.innerHTML = `
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="despEntSearch" placeholder="Buscar por cliente, N° de OC o producto…" oninput="despEntFiltrar(this.value)">
+      </div>
+    </div>
+    <div class="reg-list" id="despEntLista"><div class="empty-state">Cargando…</div></div>
+  `;
+  if(!cacheCodigosCliente) await entLoadCodigosCliente();
+  DespEntSemana = await despEntListaTodas();
+  await despLoadDespachados();
+  despEntRenderLista('despEntLista', DespEntSemana, '', true);
+}
+function despEntFiltrar(q){ despEntRenderLista('despEntLista', DespEntSemana||[], q, true); }
+let DespEntSemana = [];
 function despRenderRootBody(){
+  if(DespState.tab === 'despachos') return despRenderDespachosTab();
   if(DespState.tab === 'registros') return renderDespRegistrosTab();
   return despRenderLiberacion();
 }
