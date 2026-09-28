@@ -494,6 +494,10 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .ent-card-body{flex:1 1 auto;padding:5px 8px 6px;font-size:11px;line-height:1.3;overflow:hidden;}
 .ent-card-body b{display:block;font-size:11.5px;font-weight:700;white-space:normal;word-break:break-word;margin-bottom:2px;}
 .ent-card-body span{display:block;opacity:.95;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ent-card-items{margin-top:5px;padding-top:4px;border-top:1px solid rgba(255,255,255,.4);}
+.ent-card-item{display:flex;justify-content:space-between;align-items:flex-start;gap:6px;font-size:10.5px;line-height:1.25;margin-top:2px;}
+.ent-card-item .ci-n{flex:1 1 auto;min-width:0;word-break:break-word;white-space:normal;opacity:.97;}
+.ent-card-item .ci-q{flex:0 0 auto;font-weight:800;white-space:nowrap;}
 .machine-card{
   background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px;
   display:flex;flex-direction:column;gap:12px;position:relative;overflow:hidden;
@@ -6443,7 +6447,15 @@ function entRenderBody(){
     const h = parseInt((e.hora_entrega||'0').split(':')[0], 10);
     if(!isNaN(h)) horasConEventos.add(h);
   });
-  const alturas = Array.from({length:24}, (_,h)=> horasConEventos.has(h) ? ENT_ROW_H : ENT_ROW_H_COMPACTO);
+  // Cada hora con entregas mide lo que necesite su tarjeta más grande (según
+  // cuántos productos lleve), con un mínimo fijo; las horas vacías siguen compactas.
+  const alturaMaxPorHora = {};
+  (cacheEntregas||[]).forEach(e=>{
+    const h = parseInt((e.hora_entrega||'0').split(':')[0], 10);
+    if(isNaN(h)) return;
+    alturaMaxPorHora[h] = Math.max(alturaMaxPorHora[h]||0, entAlturaTarjeta(e));
+  });
+  const alturas = Array.from({length:24}, (_,h)=> horasConEventos.has(h) ? Math.max(ENT_ROW_H, (alturaMaxPorHora[h]||0) + 8) : ENT_ROW_H_COMPACTO);
   const offsets = []; let acumulado = 0;
   alturas.forEach(a=>{ offsets.push(acumulado); acumulado += a; });
   EntState._alturas = alturas; EntState._offsets = offsets; // para que entRenderEventosDia posicione igual
@@ -6460,6 +6472,7 @@ function entRenderBody(){
         <button class="btn ghost" onclick="entCambiarSemana(1)">Semana siguiente →</button>
         <button class="btn primary" style="--accent:var(--paradas)" onclick="entAbrirNueva('${hoy}')">+ Nueva entrega</button>
         <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios documentos</button>
+        <button class="btn" onclick="entExportarExcelPorCliente(cacheEntregas, 'Entregas_semana_'+EntState.semanaInicio)">⬇ Excel de la semana</button>
       </div>
     </div>
     <div class="ent-calendar-wrap">
@@ -6486,6 +6499,12 @@ function entRenderBody(){
     </div>
   `;
   dias.forEach(f=>entRenderEventosDia(f));
+}
+// Estimación del alto que necesita una tarjeta: pestaña (si está completada),
+// cliente (hasta 2 líneas), OC, hora, y cada producto (hasta 2 líneas).
+function entAlturaTarjeta(e){
+  const nItems = (e.items||[]).length;
+  return (e.completado ? 19 : 0) + 11 + 32 + 16 + 16 + (nItems ? (10 + nItems*28) : 0) + 8;
 }
 // Oscurece un color hexadecimal (para la pestaña superior de la tarjeta).
 function entOscurecer(hex, factor){
@@ -6514,12 +6533,14 @@ function entRenderEventosDia(fecha){
     const alto = Math.max(70, alturaHora - 6);
     const ancho = 100 / n;
     const color = e.color || '#2563EB';
+    const productos = (e.items||[]).map(it=>`<div class="ent-card-item"><span class="ci-n">${escHtml(it.item_nombre||it.item_codigo||'(sin producto)')}</span><span class="ci-q">${fmtNum(Math.round(Number(it.cantidad)||0))}${it.medida?(' '+escHtml(it.medida)):''}</span></div>`).join('');
     return `<div class="ent-card" style="top:${top}px;height:${alto}px;left:calc(${pos*ancho}% + 3px);width:calc(${ancho}% - 6px);--c:${escHtml(color)};--cd:${entOscurecer(color)};" onclick="entAbrirEditar('${e.id}')">
       ${e.completado?'<div class="ent-card-tab">✓ Completado</div>':''}
       <div class="ent-card-body">
         <b>${escHtml(e.cliente||'(sin cliente)')}</b>
         <span>${e.numero_oc?('OC '+escHtml(e.numero_oc)):'Sin OC'}</span>
         <span>🕒 ${(e.hora_entrega||'').slice(0,5)}</span>
+        ${productos ? `<div class="ent-card-items">${productos}</div>` : ''}
       </div>
     </div>`;
   }).join('');
@@ -6543,7 +6564,8 @@ async function entRenderRegistrosTab(){
       <div class="search-wrap"><span class="sic">🔎</span>
         <input type="text" id="entRegSearch" placeholder="Buscar por cliente, N° de OC o producto…" value="${escHtml(EntRegState.q)}">
       </div>
-      <button class="btn" onclick="entExportarExcel()">⬇ Descargar Excel</button>
+      <button class="btn" onclick="entExportarExcel()">⬇ Excel detallado</button>
+      <button class="btn" onclick="entExportarExcelPorCliente(entRegistrosFiltrados(), 'Entregas_por_cliente_'+EntRegState.desde+'_a_'+EntRegState.hasta)">⬇ Excel por cliente</button>
       <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios documentos</button>
     </div>
     <div class="list-meta" id="entRegMeta">Cargando…</div>
@@ -6594,6 +6616,43 @@ function entRenderRegistrosList(){
       <div class="rval"><span class="big">${nItems}</span><span class="sub">ítem(s)</span>${e.completado?'<span class="badge-completado" style="display:inline-block;margin-top:6px;">✓ Completado</span>':''}</div>
     </div>`;
   }).join('');
+}
+// Excel "por cliente": una fila por entrega (fecha, hora, cliente) y una
+// columna por cada producto; como los productos se repiten entre clientes,
+// solo se pone la cantidad a despachar donde corresponde. Al final va una
+// fila con el total de cada producto.
+function entExportarExcelPorCliente(rows, nombreArchivo){
+  rows = (rows||[]).slice().sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'') || (a.hora_entrega||'').localeCompare(b.hora_entrega||''));
+  if(!rows.length){ toast('No hay entregas para exportar'); return; }
+  // Columnas de producto: se identifican por código (o por nombre si no está relacionado) y se ordenan por nombre.
+  const cols = {}; // clave -> nombre
+  rows.forEach(e=>(e.items||[]).forEach(it=>{
+    const clave = it.item_codigo || it.item_nombre || '(sin producto)';
+    if(!cols[clave]) cols[clave] = it.item_nombre || it.item_codigo || '(sin producto)';
+  }));
+  const claves = Object.keys(cols).sort((a,b)=>((cols[a][0]==='(')-(cols[b][0]==='(')) || cols[a].localeCompare(cols[b]));
+  const fechaLarga = f => f ? f.split('-').reverse().join('/') : '';
+  const aoa = [['Fecha','Hora','Cliente', ...claves.map(k=>cols[k])]];
+  const totales = claves.map(()=>0);
+  rows.forEach(e=>{
+    const fila = [fechaLarga(e.fecha), (e.hora_entrega||'').slice(0,5), e.cliente||''];
+    claves.forEach((k,i)=>{
+      let suma = 0, hay = false;
+      (e.items||[]).forEach(it=>{
+        if((it.item_codigo || it.item_nombre || '(sin producto)') === k){ suma += Math.round(Number(it.cantidad)||0); hay = true; }
+      });
+      fila.push(hay ? suma : '');
+      if(hay) totales[i] += suma;
+    });
+    aoa.push(fila);
+  });
+  aoa.push(['','','TOTAL', ...totales]);
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = aoa[0].map((_,i)=>({ wch: i===0 ? 12 : i===1 ? 8 : i===2 ? 32 : 18 }));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+  XLSX.writeFile(wb, nombreArchivo + '.xlsx');
+  toast('Excel exportado');
 }
 async function entExportarExcel(){
   const rows = entRegistrosFiltrados();
