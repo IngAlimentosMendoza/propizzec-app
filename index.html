@@ -482,6 +482,55 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .ent-hour-label{grid-column:1;position:sticky;left:0;z-index:2;background:var(--card);font-size:10.5px;color:var(--muted);text-align:right;padding:2px 8px 0 0;border-right:1px solid var(--line);border-top:1px solid var(--line);}
 .ent-hour-label.ent-hora-compacta{font-size:8px;padding-top:0;opacity:.55;overflow:hidden;}
 .badge-completado{background:var(--ok);color:#fff;font-size:11px;font-weight:700;padding:4px 10px;border-radius:20px;white-space:nowrap;}
+/* ---------------- Indicadores ---------------- */
+.ind-good{color:var(--ok);} .ind-mid{color:var(--personal);} .ind-bad{color:var(--danger);}
+.ind-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:22px;}
+@media (max-width:820px){ .ind-kpi-row{grid-template-columns:repeat(2,1fr);} }
+.ind-kpi-card{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--datos);border-radius:var(--radius);padding:16px 18px 15px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.ind-kpi-card .lbl{font-size:12px;color:var(--muted);margin-bottom:9px;line-height:1.35;}
+.ind-kpi-card .val{font-size:29px;line-height:1;font-family:'IBM Plex Mono',monospace;font-weight:600;color:var(--ink);}
+.ind-kpi-card .val small{font-size:14px;font-weight:500;color:var(--muted);margin-left:2px;}
+.ind-kpi-card .sub2{font-size:11.5px;color:var(--muted);margin-top:7px;}
+.ind-kpi-card .bar{height:5px;border-radius:3px;background:var(--line);margin-top:11px;overflow:hidden;}
+.ind-kpi-card .bar i{display:block;height:100%;border-radius:3px;}
+.ind-panel{background:var(--card);border:1px solid var(--line);border-left:4px solid var(--datos);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;box-shadow:0 1px 3px rgba(15,23,42,.05);}
+.ind-grid2{display:grid;grid-template-columns:1.3fr 1fr;gap:14px;}
+@media (max-width:900px){ .ind-grid2{grid-template-columns:1fr;} }
+.ind-panel h3{font-size:15px;font-family:'Space Grotesk',sans-serif;font-weight:700;margin:0 0 3px;color:var(--ink);}
+.ind-panel .sub2{font-size:12px;color:var(--muted);margin:0 0 12px;}
+.ind-bars{display:flex;align-items:flex-end;gap:9px;height:140px;padding-top:10px;}
+.ind-bars .col{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;}
+.ind-bars .col .stack{width:100%;max-width:32px;display:flex;flex-direction:column-reverse;border-radius:6px 6px 0 0;overflow:hidden;}
+.ind-bars .col .stack div{width:100%;}
+.ind-bars .col .lbl{font-size:10px;color:var(--muted);margin-top:7px;}
+.ind-bars .col .v{font-size:10.5px;font-family:'IBM Plex Mono',monospace;margin-bottom:3px;color:var(--ink);}
+.ind-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);margin-top:10px;flex-wrap:wrap;}
+.ind-legend span{display:inline-flex;align-items:center;gap:5px;}
+.ind-legend i{width:8px;height:8px;border-radius:2px;display:inline-block;}
+.ind-row{display:flex;align-items:center;gap:10px;margin-top:10px;}
+.ind-row:first-child{margin-top:0;}
+.ind-row .name{width:150px;flex:0 0 auto;font-size:12px;font-weight:600;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.ind-track{flex:1 1 auto;height:8px;border-radius:4px;background:var(--line);overflow:hidden;}
+.ind-track i{display:block;height:100%;border-radius:4px;}
+.ind-row .pct{width:48px;text-align:right;font-size:12px;flex:0 0 auto;font-family:'IBM Plex Mono',monospace;color:var(--ink);}
+.ind-stat-row{display:flex;gap:9px;flex-wrap:wrap;}
+.ind-stat{flex:1;min-width:100px;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:11px 13px;}
+.ind-stat .n{font-size:19px;font-family:'IBM Plex Mono',monospace;font-weight:600;}
+.ind-stat .l{font-size:10.5px;color:var(--muted);margin-top:2px;}
+.ind-week{display:flex;gap:6px;}
+.ind-week .d{flex:1;text-align:center;padding:9px 4px;border-radius:9px;font-size:10.5px;}
+.ind-week .d .dd{font-weight:700;font-size:13px;font-family:'IBM Plex Mono',monospace;margin-bottom:2px;}
+.ind-table{width:100%;border-collapse:collapse;font-size:12.5px;}
+.ind-table th{text-align:left;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;padding:0 8px 9px;border-bottom:1px solid var(--line);}
+.ind-table td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:middle;color:var(--ink);}
+.ind-table tr:last-child td{border-bottom:none;}
+.ind-table tr:hover{background:#FAFBFC;}
+.ind-table td.num, .ind-table th.num{text-align:right;font-family:'IBM Plex Mono',monospace;}
+.ind-pname{font-weight:600;} .ind-pcode{color:var(--muted);font-size:11px;display:block;}
+.ind-pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px;}
+.ind-pill.good{background:rgba(5,150,105,.12);color:var(--ok);} .ind-pill.mid{background:rgba(217,119,6,.14);color:var(--personal);} .ind-pill.bad{background:rgba(220,38,38,.12);color:var(--danger);}
+.ind-pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+
 .ent-daycol{position:relative;border-right:1px solid var(--line);background:#fff;}
 .ent-daycol.ent-finde{background:#F1F5F9;}
 .ent-hourline{position:absolute;left:0;right:0;border-top:1px solid var(--line);height:0;}
@@ -2363,7 +2412,7 @@ const MODULES = {
   monitoreo:    { label:'Monitoreo',     color:'--datos',      subs:['Producción Operativa','Calidad Operativa'] },
   calidad:      { label:'Calidad',       color:'--calidad',    subs:['Desperdicios','Cuarentena'] },
   entregas:     { label:'Entregas',      color:'--paradas',    subs:['Calendario semanal'] },
-  indicadores:  { label:'Indicadores',   color:'--calidad',    subs:['KPI Producción','KPI Sellado'] },
+  indicadores:  { label:'Indicadores',   color:'--datos',      subs:['Producción','Sellado','Entregas'] },
   sellado:      { label:'Sellado',       color:'--materia',    subs:['Actividades','Control de despacho','Registros'] },
   bodega:       { label:'Bodega',        color:'--traza',      subs:['Recepción','Registros'] },
   despacho:     { label:'Logística',      color:'--paradas',    subs:['Despachos','Liberación de producto','Registros'] },
@@ -6972,6 +7021,7 @@ async function entEliminar(id){
   toast('Entrega eliminada');
 }
 
+/* ============================================================
 async function renderCalidad(){
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -8176,351 +8226,301 @@ function exportarExcelRegistroFiltrado(){
 }
 
 /* ============================================================
-   INDICADORES — KPI Producción / KPI Sellado
+   INDICADORES — Producción, Sellado, Entregas (con datos reales)
    ============================================================ */
-const IndState = { tab:'produccion' };
+const IndState = { tab:'produccion', rango:'semana', offset:0 };
+function indRangoFechas(){
+  const hoy = todayISO();
+  if(IndState.rango === 'mes'){
+    const d = new Date(hoy+'T00:00:00');
+    d.setMonth(d.getMonth() + IndState.offset);
+    const desde = new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0,10);
+    const hastaD = new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().slice(0,10);
+    return { desde, hasta: (IndState.offset===0 ? hoy : hastaD) };
+  }
+  const lunesActual = entLunesDe(hoy);
+  const lunes = entSumarDias(lunesActual, IndState.offset*7);
+  const domingo = entSumarDias(lunes, 6);
+  return { desde: lunes, hasta: (IndState.offset===0 ? hoy : domingo) };
+}
+function indRangoTexto(){
+  const { desde, hasta } = indRangoFechas();
+  if(IndState.rango === 'mes'){
+    const d = new Date(desde+'T00:00:00');
+    return d.toLocaleDateString('es-EC', { month:'long', year:'numeric' });
+  }
+  return ddMMyy(desde) + ' – ' + ddMMyy(hasta);
+}
 async function renderIndicadores(){
   const app = document.getElementById('app');
   app.innerHTML = `
-    <div class="tabbar">
-      <button class="tabbtn ${IndState.tab==='produccion'?'active':''}" data-tab="produccion" onclick="indGoTab('produccion')">KPI Producción</button>
-      <button class="tabbtn ${IndState.tab==='sellado'?'active':''}" data-tab="sellado" onclick="indGoTab('sellado')">KPI Sellado</button>
+    <div class="ent-toolbar">
+      <div class="ent-toolbar-left">
+        <h2 style="margin:0;">📊 Indicadores</h2>
+        <span class="sub" style="margin-left:8px;">${escHtml(indRangoTexto())}${IndState.offset===0?' (actual)':''}</span>
+      </div>
+      <div class="ent-toolbar-right">
+        <button class="btn ghost" onclick="indCambiarOffset(-1)">← ${IndState.rango==='mes'?'Mes anterior':'Semana anterior'}</button>
+        ${IndState.offset!==0 ? `<button class="btn ghost" onclick="indIrActual()">Hoy</button>` : ''}
+        <button class="btn ghost" ${IndState.offset>=0?'disabled':''} onclick="indCambiarOffset(1)">${IndState.rango==='mes'?'Mes siguiente':'Semana siguiente'} →</button>
+        <button class="btn ${IndState.rango==='semana'?'primary':'ghost'}" style="--accent:var(--datos)" onclick="indCambiarRango('semana')">Semana</button>
+        <button class="btn ${IndState.rango==='mes'?'primary':'ghost'}" style="--accent:var(--datos)" onclick="indCambiarRango('mes')">Mes</button>
+      </div>
     </div>
-    <div id="indBody"><div class="empty-state">Cargando…</div></div>
+    <div class="tabbar">
+      <button class="tabbtn ${IndState.tab==='produccion'?'active':''}" data-tab="produccion" onclick="indGoTab('produccion')">Producción</button>
+      <button class="tabbtn ${IndState.tab==='sellado'?'active':''}" data-tab="sellado" onclick="indGoTab('sellado')">Sellado</button>
+      <button class="tabbtn ${IndState.tab==='entregas'?'active':''}" data-tab="entregas" onclick="indGoTab('entregas')">Entregas</button>
+    </div>
+    <div id="indRoot"><div class="empty-state">Cargando…</div></div>
   `;
-  await monLoad(false);
   indRenderBody();
 }
 function indGoTab(tab){ IndState.tab = tab; setActiveTab(tab); indRenderBody(); }
+function indCambiarRango(r){ IndState.rango = r; IndState.offset = 0; renderIndicadores(); }
+function indCambiarOffset(delta){ IndState.offset += delta; if(IndState.offset>0) IndState.offset=0; renderIndicadores(); }
+function indIrActual(){ IndState.offset = 0; renderIndicadores(); }
 function indRenderBody(){
-  if(IndState.tab === 'produccion') return renderIndProduccion();
-  if(IndState.tab === 'sellado') return renderIndSellado();
+  if(IndState.tab === 'sellado') return indRenderSellado();
+  if(IndState.tab === 'entregas') return indRenderEntregasTab();
+  return indRenderProduccion();
 }
-function buildIndicadoresRows(regs){
-  return (regs||[]).map(r=>{
-    const c = monCalc(r);
-    return {
-      "Fecha": r.fecha,
-      "Área / Proceso": r.area,
-      "Código de Producto": r.codigo_producto,
-      "Producto": r.producto,
-      "Presentación / Formato": r.presentacion,
-      "Lote de Producción": r.lote,
-      "N° Orden de Producción": r.orden_produccion,
-      "N° Operarios Asignados": r.operarios,
-      "Hora Inicio": r.hora_inicio,
-      "Hora Fin": r.hora_fin,
-      "Horas Trabajadas en el Bloque (h)": c.horasBloque,
-      "Horas Extra Adicionales (h)": r.horas_extra,
-      "Horas Totales Trabajadas (h)": c.horasTotales,
-      "Horas-Hombre Totales (H-H)": c.hhTotales,
-      "Unidades Planificadas": r.unid_planificadas,
-      "Unidades Producidas (Total)": r.unid_producidas,
-      "Unidades en Buen Estado (Conformes)": c.buenEstado,
-      "Unidades No Conformes / Rechazadas": r.unid_no_conformes,
-      "Unidades Reprocesadas": r.unid_reprocesadas,
-      "% Cumplimiento de Plan": c.pctCumplPlan,
-      "% Producto Conforme": c.pctConforme,
-      "Productividad (Unid / H-H)": c.productividad,
-      "N° de Paradas": r.num_paradas,
-      "Tiempo Total de Paradas (min)": r.tiempo_paradas,
-      "Motivo Principal de Parada": r.motivo_parada,
-      "% Disponibilidad (Tiempo)": c.pctDisponibilidad,
-      "Materia Prima Entrante (kg)": r.mp_entrante,
-      "Merma de Proceso (kg)": r.merma_proceso,
-      "% Merma": c.pctMerma,
-      "Motivo Principal de Merma": r.motivo_merma,
-      "Rendimiento de Materia Prima (kg prod. / kg MP)": c.rendimientoMP,
-      "Peso Teórico Unidad (g)": r.peso_teorico,
-      "Peso Real Promedio Unidad (g)": r.peso_real,
-      "Temperatura de Proceso Registrada (°C)": r.temperatura,
-      "Tiempo de Proceso Crítico / PCC (min)": r.tiempo_pcc,
-      "Cumplimiento de PCC": r.cumplimiento_pcc,
-      "N° de No Conformidades Detectadas": r.no_conformidades,
-      "Producto Rechazado por Calidad (kg o unid)": r.producto_rechazado,
-      "Responsable del Registro": [r.responsable_calidad, r.responsable_mp].filter(Boolean).join(' & '),
-      "Observaciones": [r.observaciones_calidad?('CALIDAD: '+r.observaciones_calidad):'', r.observaciones_mp?('PRODUCCION: '+r.observaciones_mp):''].filter(Boolean).join(' / '),
-      "OEE Estimado (%)": c.oee
-    };
-  });
+function indPill(pct){
+  if(pct==null) return '';
+  if(pct>=1) return '<span class="ind-pill good"><span class="dot"></span>Excelente</span>';
+  if(pct>=.95) return '<span class="ind-pill good"><span class="dot"></span>Bueno</span>';
+  if(pct>=.85) return '<span class="ind-pill mid"><span class="dot"></span>Moderado</span>';
+  return '<span class="ind-pill bad"><span class="dot"></span>Bajo</span>';
 }
-let cacheRegistroTodo = null;
-async function loadIndicadoresRows(force){
-  if(!force && cacheRegistroTodo) return cacheRegistroTodo;
-  // Solo se consideran para KPI los registros CERRADOS (locked=true) en Monitoreo,
-  // es decir, producciones ya verificadas y dadas por completas.
-  const { data, error } = await sb.from('registro_produccion').select('*').eq('locked', true).order('fecha',{ascending:true}).limit(5000);
-  cacheRegistroTodo = error ? [] : (data||[]);
-  return cacheRegistroTodo;
+function indTrack(pct, cap){
+  if(pct==null) return '<span class="ind-track" style="flex:0 0 64px;"></span>';
+  cap = cap || 1.15;
+  const w = Math.max(0, Math.min(100, (pct/cap)*100));
+  const color = pct>=1?'var(--ok)':pct>=.95?'var(--ok)':pct>=.85?'var(--personal)':'var(--danger)';
+  return `<span class="ind-track" style="flex:0 0 64px;"><i style="width:${w}%;background:${color};"></i></span>`;
 }
-const IndProdState = { desde:'', hasta:'', producto:'', area:'' };
-async function renderIndProduccion(){
-  const body = document.getElementById('indBody');
-  body.innerHTML = `
-    <div class="field-row" style="margin-bottom:6px;">
-      <div class="field"><label>Desde</label><input type="date" id="ipDesde" value="${escHtml(IndProdState.desde)}"></div>
-      <div class="field"><label>Hasta</label><input type="date" id="ipHasta" value="${escHtml(IndProdState.hasta)}"></div>
-    </div>
-    <div class="field-row" style="margin-bottom:6px;">
-      <div class="field"><label>Producto</label><input type="text" id="ipProducto" placeholder="Código o nombre…" value="${escHtml(IndProdState.producto)}"></div>
-      <div class="field"><label>Área</label><input type="text" id="ipArea" placeholder="Área…" value="${escHtml(IndProdState.area)}"></div>
-    </div>
-    <div id="ipBody"><div class="empty-state">Cargando…</div></div>
-  `;
-  document.getElementById('ipDesde').addEventListener('change', e=>{ IndProdState.desde=e.target.value; indProdRender(); });
-  document.getElementById('ipHasta').addEventListener('change', e=>{ IndProdState.hasta=e.target.value; indProdRender(); });
-  document.getElementById('ipProducto').addEventListener('input', e=>{ IndProdState.producto=e.target.value; indProdRender(); });
-  document.getElementById('ipArea').addEventListener('input', e=>{ IndProdState.area=e.target.value; indProdRender(); });
-  await loadIndicadoresRows(false);
-  indProdRender();
-}
-function indProdFiltered(){
-  let rows = (cacheRegistroTodo||[]).slice();
-  if(IndProdState.desde) rows = rows.filter(r=>r.fecha >= IndProdState.desde);
-  if(IndProdState.hasta) rows = rows.filter(r=>r.fecha <= IndProdState.hasta);
-  const q = (IndProdState.producto||'').trim().toUpperCase();
-  if(q) rows = rows.filter(r=>(r.codigo_producto||'').toUpperCase().includes(q) || (r.producto||'').toUpperCase().includes(q));
-  const a = (IndProdState.area||'').trim().toUpperCase();
-  if(a) rows = rows.filter(r=>(r.area||'').toUpperCase().includes(a));
-  return rows;
-}
-function indProdRender(){
-  const wrap = document.getElementById('ipBody');
-  if(!wrap) return;
-  const rows = indProdFiltered();
-  if(!rows.length){ wrap.innerHTML = '<div class="empty-state">Sin registros cerrados en este rango. Cierra un registro en Monitoreo → Registros para verlo aquí.</div>'; return; }
-  const calcs = rows.map(r=>({ r, c: monCalc(r) }));
-  const avg = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
-  const oees = calcs.map(x=>x.c.oee).filter(v=>v!=null);
-  const cumplPlan = calcs.map(x=>x.c.pctCumplPlan).filter(v=>v!=null);
-  const conforme = calcs.map(x=>x.c.pctConforme).filter(v=>v!=null);
-  const disponib = calcs.map(x=>x.c.pctDisponibilidad).filter(v=>v!=null);
-  const merma = calcs.map(x=>x.c.pctMerma).filter(v=>v!=null);
-  const rendMP = calcs.map(x=>x.c.rendimientoMP).filter(v=>v!=null);
-  const prod = calcs.map(x=>x.c.productividad).filter(v=>v!=null);
+function indPromedio(arr){ const v = arr.filter(x=>x!=null); return v.length ? v.reduce((s,x)=>s+x,0)/v.length : null; }
+function indFmtPct(v){ return v==null ? '—' : Math.round(v*100); }
+
+/* ---------------- Producción ---------------- */
+async function indRenderProduccion(){
+  const root = document.getElementById('indRoot');
+  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  const { desde, hasta } = indRangoFechas();
+  const [{ data: registros }, { data: paradas }] = await Promise.all([
+    sb.from('registro_produccion').select('*').eq('locked', true).gte('fecha', desde).lte('fecha', hasta),
+    sb.from('paradas').select('motivo, minutos, cronograma_id').gte('inicio', desde+'T00:00:00').lte('inicio', hasta+'T23:59:59')
+  ]);
+  const calcs = (registros||[]).map(r=>({ r, c: monCalc(r) }));
+
+  const oeeProm = indPromedio(calcs.map(x=>x.c.oee));
+  const mpProm = indPromedio(calcs.map(x=>x.c.rendimientoMP));
+  const planProm = indPromedio(calcs.map(x=>x.c.pctCumplPlan));
+  const dispProm = indPromedio(calcs.map(x=>x.c.pctDisponibilidad));
 
   const porDia = {};
   calcs.forEach(({r,c})=>{
-    if(c.oee==null) return;
-    if(!porDia[r.fecha]) porDia[r.fecha] = [];
-    porDia[r.fecha].push(c.oee);
+    if(!porDia[r.fecha]) porDia[r.fecha] = { disp:[], plan:[], conf:[] };
+    if(c.pctDisponibilidad!=null) porDia[r.fecha].disp.push(c.pctDisponibilidad);
+    if(c.pctCumplPlan!=null) porDia[r.fecha].plan.push(c.pctCumplPlan);
+    if(c.pctConforme!=null) porDia[r.fecha].conf.push(c.pctConforme);
   });
-  const dias = Object.keys(porDia).sort();
-  const oeePorDia = dias.map(d=>({ fecha:d, oee: avg(porDia[d]) }));
-  const maxOeeDia = Math.max(0.01, ...oeePorDia.map(x=>x.oee));
+  const diasOrdenados = Object.keys(porDia).sort();
+
+  const paradasPorMotivo = {};
+  (paradas||[]).forEach(p=>{
+    const m = p.motivo || 'Sin motivo';
+    paradasPorMotivo[m] = (paradasPorMotivo[m]||0) + Number(p.minutos||0);
+  });
+  const topParadas = Object.entries(paradasPorMotivo).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxParada = topParadas.length ? topParadas[0][1] : 1;
 
   const porProducto = {};
   calcs.forEach(({r,c})=>{
-    const key = r.codigo_producto || '—';
-    if(!porProducto[key]) porProducto[key] = { nombre:r.producto, cumpl:[], conf:[], oee:[] };
-    if(c.pctCumplPlan!=null) porProducto[key].cumpl.push(c.pctCumplPlan);
-    if(c.pctConforme!=null) porProducto[key].conf.push(c.pctConforme);
-    if(c.oee!=null) porProducto[key].oee.push(c.oee);
+    const k = r.codigo_producto || '(sin código)';
+    if(!porProducto[k]) porProducto[k] = { nombre:r.producto||k, oee:[], mp:[], plan:[] };
+    if(c.oee!=null) porProducto[k].oee.push(c.oee);
+    if(c.rendimientoMP!=null) porProducto[k].mp.push(c.rendimientoMP);
+    if(c.pctCumplPlan!=null) porProducto[k].plan.push(c.pctCumplPlan);
   });
-  const productosArr = Object.keys(porProducto).map(k=>{
-    const p = porProducto[k];
-    return { codigo:k, nombre:p.nombre, cumpl: avg(p.cumpl), conf: avg(p.conf), oee: avg(p.oee) };
-  }).sort((a,b)=>(b.oee||0)-(a.oee||0));
+  const filasProducto = Object.entries(porProducto).map(([codigo,p])=>({
+    codigo, nombre:p.nombre, oee: indPromedio(p.oee), mp: indPromedio(p.mp), plan: indPromedio(p.plan)
+  })).sort((a,b)=>(a.oee==null?-1:a.oee)-(b.oee==null?-1:b.oee));
 
-  const motivoMinSimple = {};
-  calcs.forEach(({r})=>{
-    const motivos = (r.motivo_parada||'').split(';').map(s=>s.trim()).filter(Boolean);
-    const principal = motivos[0] || 'Sin especificar';
-    motivoMinSimple[principal] = (motivoMinSimple[principal]||0) + Number(r.tiempo_paradas||0);
-  });
-  const paradasArr = Object.keys(motivoMinSimple).map(k=>({motivo:k, minutos:motivoMinSimple[k]})).filter(p=>p.minutos>0).sort((a,b)=>b.minutos-a.minutos);
-  const maxParadaMin = Math.max(1, ...paradasArr.map(p=>p.minutos));
-
-  const motivoMermaKg = {};
-  calcs.forEach(({r})=>{
-    const m = r.motivo_merma || 'Sin especificar';
-    motivoMermaKg[m] = (motivoMermaKg[m]||0) + Number(r.merma_proceso||0);
-  });
-  const mermaArr = Object.keys(motivoMermaKg).map(k=>({motivo:k, kg:motivoMermaKg[k]})).filter(m=>m.kg>0).sort((a,b)=>b.kg-a.kg);
-  const maxMermaKg = Math.max(1, ...mermaArr.map(m=>m.kg));
-
-  const fmtPct = v => v!=null ? (v*100).toFixed(0)+'%' : '—';
-
-  wrap.innerHTML = `
-    <div class="sub" style="margin-bottom:10px;">${rows.length} registro(s) cerrado(s) en este rango</div>
-    <div class="parada-count" style="flex-wrap:wrap;">
-      <div class="pc"><div class="n">${fmtPct(avg(oees))}</div><div class="l">OEE promedio</div></div>
-      <div class="pc"><div class="n">${fmtPct(avg(cumplPlan))}</div><div class="l">Cumplimiento de plan</div></div>
-      <div class="pc"><div class="n">${fmtPct(avg(conforme))}</div><div class="l">% Conforme</div></div>
-      <div class="pc"><div class="n">${fmtPct(avg(disponib))}</div><div class="l">Disponibilidad</div></div>
-      <div class="pc"><div class="n">${fmtPct(avg(merma))}</div><div class="l">% Merma</div></div>
-      <div class="pc"><div class="n">${avg(rendMP)!=null?avg(rendMP).toFixed(2):'—'}</div><div class="l">Rendimiento MP (kg/kg)</div></div>
-      <div class="pc"><div class="n">${avg(prod)!=null?fmtNum(avg(prod)):'—'}</div><div class="l">Productividad (u/HH)</div></div>
+  root.innerHTML = `
+    <div class="ind-kpi-row">
+      <div class="ind-kpi-card"><div class="lbl">OEE promedio</div><div class="val">${indFmtPct(oeeProm)}<small>%</small></div><div class="sub2">${calcs.length} orden(es) verificada(s)</div><div class="bar"><i style="width:${indFmtPct(oeeProm)||0}%;background:var(--ok);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Rendimiento de MP</div><div class="val">${indFmtPct(mpProm)}<small>%</small></div><div class="sub2">Teórico / real consumido</div><div class="bar"><i style="width:${indFmtPct(mpProm)||0}%;background:var(--personal);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Cumplimiento de plan</div><div class="val">${indFmtPct(planProm)}<small>%</small></div><div class="sub2">Producido vs. planificado</div><div class="bar"><i style="width:${indFmtPct(planProm)||0}%;background:var(--ok);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Disponibilidad</div><div class="val">${indFmtPct(dispProm)}<small>%</small></div><div class="sub2">Tiempo sin contar paradas</div><div class="bar"><i style="width:${indFmtPct(dispProm)||0}%;background:var(--ok);"></i></div></div>
     </div>
-
-    <div class="section-title">Tendencia de OEE por día</div>
-    ${oeePorDia.length ? oeePorDia.map(d=>`
-      <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>${ddMMyy(d.fecha)}</span><span>${fmtPct(d.oee)}</span></div>
-        <div style="background:var(--line);border-radius:6px;height:9px;overflow:hidden;"><div style="width:${(d.oee/maxOeeDia)*100}%;height:100%;background:var(--datos);"></div></div>
+    <div class="ind-grid2">
+      <div class="ind-panel">
+        <h3>OEE por día</h3>
+        <div class="sub2">Disponibilidad × Cumplimiento de plan × Conformidad</div>
+        ${diasOrdenados.length ? `<div class="ind-bars">${diasOrdenados.map(f=>{
+          const d = porDia[f];
+          const disp = indPromedio(d.disp)||0, plan = indPromedio(d.plan)||0, conf = indPromedio(d.conf)||0;
+          const oee = disp*plan*conf;
+          const bars = [[disp,'var(--ok)'],[plan,'var(--personal)'],[conf,'var(--traza)']].map(([v,c])=>`<div style="height:${Math.round(v*38)}px;background:${c};"></div>`).join('');
+          return `<div class="col"><div class="v">${Math.round(oee*100)}%</div><div class="stack" style="height:${Math.round(oee*120)+8}px;">${bars}</div><div class="lbl">${ddMMyy(f)}</div></div>`;
+        }).join('')}</div>
+        <div class="ind-legend"><span><i style="background:var(--ok);"></i>Disponibilidad</span><span><i style="background:var(--personal);"></i>Cumplimiento de plan</span><span><i style="background:var(--traza);"></i>Conformidad</span></div>`
+        : '<div class="empty-state">Sin órdenes verificadas en este rango</div>'}
       </div>
-    `).join('') : '<div class="empty-state">Sin datos suficientes</div>'}
-
-    <div class="section-title">OEE por producto</div>
-    ${productosArr.length ? productosArr.map(p=>`
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;">
-          <span><b>${escHtml(p.codigo)}</b> ${escHtml(p.nombre||'')}</span>
-          <span>OEE ${fmtPct(p.oee)} · Plan ${fmtPct(p.cumpl)} · Conforme ${fmtPct(p.conf)}</span>
-        </div>
-        <div style="background:var(--line);border-radius:6px;height:10px;overflow:hidden;">
-          <div style="width:${Math.min(100,(p.oee||0)*100)}%;height:100%;background:var(--produccion);"></div>
-        </div>
+      <div class="ind-panel">
+        <h3>Paradas más frecuentes</h3>
+        <div class="sub2">Minutos acumulados por motivo</div>
+        ${topParadas.length ? topParadas.map(([m,min])=>`<div class="ind-row"><div class="name">${escHtml(m)}</div>${indTrack(min/maxParada,1)}<div class="pct">${Math.round(min)}m</div></div>`).join('') : '<div class="empty-state">Sin paradas registradas en este rango</div>'}
       </div>
-    `).join('') : ''}
-
-    <div class="section-title">Principales causas de paradas (minutos)</div>
-    ${paradasArr.length ? paradasArr.map(p=>`
-      <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;"><span>${escHtml(p.motivo)}</span><span>${fmtNum(p.minutos)} min</span></div>
-        <div style="background:var(--line);border-radius:6px;height:9px;overflow:hidden;"><div style="width:${(p.minutos/maxParadaMin)*100}%;height:100%;background:var(--paradas);"></div></div>
-      </div>
-    `).join('') : '<div class="empty-state">Sin paradas registradas</div>'}
-
-    <div class="section-title">Principales causas de merma (kg)</div>
-    ${mermaArr.length ? mermaArr.map(m=>`
-      <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;"><span>${escHtml(m.motivo)}</span><span>${fmtNum(m.kg)} kg</span></div>
-        <div style="background:var(--line);border-radius:6px;height:9px;overflow:hidden;"><div style="width:${(m.kg/maxMermaKg)*100}%;height:100%;background:var(--materia);"></div></div>
-      </div>
-    `).join('') : '<div class="empty-state">Sin mermas registradas</div>'}
-
-    <div class="modal-actions" style="margin-top:10px;">
-      <button class="btn ghost" style="width:100%;" onclick="indProdExportExcel()">⬇ Exportar Excel de este análisis</button>
+    </div>
+    <div class="ind-panel">
+      <h3>Por producto</h3>
+      <div class="sub2">Promedio del rango — de menor a mayor OEE</div>
+      ${filasProducto.length ? `<table class="ind-table"><thead><tr><th>Producto</th><th class="num">OEE</th><th class="num">Rend. MP</th><th class="num">Cumpl. plan</th><th>Estado</th></tr></thead><tbody>
+        ${filasProducto.map(p=>`<tr><td><span class="ind-pname">${escHtml(p.nombre)}</span><span class="ind-pcode">${escHtml(p.codigo)}</span></td><td class="num">${indTrack(p.oee)}${indFmtPct(p.oee)}%</td><td class="num">${indTrack(p.mp)}${indFmtPct(p.mp)}%</td><td class="num">${indTrack(p.plan)}${indFmtPct(p.plan)}%</td><td>${indPill(p.oee)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty-state">Sin datos en este rango</div>'}
     </div>
   `;
 }
-function indProdExportExcel(){
-  exportarExcelRegistroRows(indProdFiltered(), 'kpi');
-}
-const IndSelState = { desde:'', hasta:'', q:'' };
-let indSelRowsCache = null;
-async function renderIndSellado(){
-  const body = document.getElementById('indBody');
-  body.innerHTML = `
-    <div class="field-row" style="margin-bottom:6px;">
-      <div class="field"><label>Desde</label><input type="date" id="isDesde" value="${escHtml(IndSelState.desde)}"></div>
-      <div class="field"><label>Hasta</label><input type="date" id="isHasta" value="${escHtml(IndSelState.hasta)}"></div>
+
+/* ---------------- Sellado ---------------- */
+async function indRenderSellado(){
+  const root = document.getElementById('indRoot');
+  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  const { desde, hasta } = indRangoFechas();
+  const { data: filas } = await sb.from('sellado_registros').select('tipo_actividad, nombre_actividad, items').gte('fecha', desde).lte('fecha', hasta);
+  const items = [];
+  (filas||[]).forEach(f=>(f.items||[]).forEach(it=>items.push({ tipo_actividad: f.tipo_actividad, ...it })));
+  const productivos = items.filter(it=>!it.es_parada && it.item_codigo && it.item_codigo!=='N/A');
+  const paradas = items.filter(it=>it.es_parada);
+
+  const conPct = productivos.filter(it=>it.pct_cumplimiento!=null);
+  const cumplProm = indPromedio(conPct.map(it=>it.pct_cumplimiento));
+  const unidadesSelladas = productivos.reduce((s,it)=>s+Number(it.cantidad||0),0);
+  const minutosParada = paradas.reduce((s,it)=>s+Number(it.minutos_realizado||0),0);
+  const bajoRendimiento = conPct.filter(it=>it.pct_cumplimiento<0.85).length;
+
+  const porSelladora = {};
+  conPct.forEach(it=>{
+    const meta = SELLADO_ACTIVIDADES.find(a=>a.key===it.tipo_actividad);
+    const label = meta ? meta.label : it.tipo_actividad;
+    if(!porSelladora[label]) porSelladora[label] = [];
+    porSelladora[label].push(it.pct_cumplimiento);
+  });
+  const filasSelladora = Object.entries(porSelladora).map(([n,arr])=>({ nombre:n, pct: indPromedio(arr) })).sort((a,b)=>(b.pct||0)-(a.pct||0));
+
+  const clasif = { 'EXCELENTE RENDIMIENTO':0, 'BUEN RENDIMIENTO':0, 'RENDIMIENTO MODERADO':0, 'BAJO RENDIMIENTO':0 };
+  conPct.forEach(it=>{ if(clasif[it.clasificacion_kpi]!=null) clasif[it.clasificacion_kpi]++; });
+
+  const bajos = conPct.filter(it=>it.pct_cumplimiento<0.95).sort((a,b)=>new Date(b.hora_fin||0)-new Date(a.hora_fin||0)).slice(0,8);
+
+  root.innerHTML = `
+    <div class="ind-kpi-row">
+      <div class="ind-kpi-card"><div class="lbl">Cumplimiento promedio</div><div class="val">${indFmtPct(cumplProm)}<small>%</small></div><div class="sub2">${conPct.length} ítem(s) sellado(s) con meta</div><div class="bar"><i style="width:${Math.min(100,indFmtPct(cumplProm)||0)}%;background:var(--ok);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Unidades selladas</div><div class="val">${fmtNum(unidadesSelladas)}</div><div class="sub2">${productivos.length} registro(s)</div><div class="bar"><i style="width:70%;background:var(--traza);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Horas de parada</div><div class="val">${(minutosParada/60).toFixed(1)}<small>h</small></div><div class="sub2">${paradas.length} parada(s) registrada(s)</div><div class="bar"><i style="width:${Math.min(100,minutosParada/6)}%;background:var(--personal);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Ítems bajo rendimiento</div><div class="val">${bajoRendimiento}</div><div class="sub2">Menos de 85% de la meta</div><div class="bar"><i style="width:${conPct.length?Math.round(bajoRendimiento/conPct.length*100):0}%;background:var(--danger);"></i></div></div>
     </div>
-    <div class="field">
-      <label>Buscar producto</label>
-      <input type="text" id="isSearch" placeholder="Código o nombre…" value="${escHtml(IndSelState.q)}">
+    <div class="ind-grid2">
+      <div class="ind-panel">
+        <h3>Cumplimiento por selladora</h3>
+        <div class="sub2">% contra la meta de unidades/hora de cada máquina</div>
+        ${filasSelladora.length ? filasSelladora.map(s=>`<div class="ind-row"><div class="name">${escHtml(s.nombre)}</div>${indTrack(s.pct)}<div class="pct">${indFmtPct(s.pct)}%</div></div>`).join('') : '<div class="empty-state">Sin registros en este rango</div>'}
+      </div>
+      <div class="ind-panel">
+        <h3>Clasificación del rango</h3>
+        <div class="sub2">Cuántos ítems sellados cayeron en cada categoría</div>
+        <div class="ind-stat-row">
+          <div class="ind-stat"><div class="n ind-good">${clasif['EXCELENTE RENDIMIENTO']}</div><div class="l">Excelente</div></div>
+          <div class="ind-stat"><div class="n ind-good">${clasif['BUEN RENDIMIENTO']}</div><div class="l">Bueno</div></div>
+          <div class="ind-stat"><div class="n ind-mid">${clasif['RENDIMIENTO MODERADO']}</div><div class="l">Moderado</div></div>
+          <div class="ind-stat"><div class="n ind-bad">${clasif['BAJO RENDIMIENTO']}</div><div class="l">Bajo</div></div>
+        </div>
+        <div class="sub2" style="margin-top:14px;">${conPct.length} ítem(s) con meta en este rango</div>
+      </div>
     </div>
-    <div id="isBody"><div class="empty-state">Cargando…</div></div>
+    <div class="ind-panel">
+      <h3>Últimos registros por debajo de la meta</h3>
+      <div class="sub2">Para revisar si fue la máquina, el operador o la meta configurada</div>
+      ${bajos.length ? `<table class="ind-table"><thead><tr><th>Código</th><th>Producto</th><th class="num">Unid./hora</th><th>Estado</th></tr></thead><tbody>
+        ${bajos.map(it=>`<tr><td class="ind-pcode">${escHtml(it.codigo_item||'—')}</td><td class="ind-pname">${escHtml(it.item_nombre||it.item_codigo)}</td><td class="num">${fmtNum(it.unidades_hora)}</td><td>${indPill(it.pct_cumplimiento)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty-state">Sin registros por debajo de la meta en este rango</div>'}
+    </div>
   `;
-  document.getElementById('isDesde').addEventListener('change', e=>{ IndSelState.desde = e.target.value; indSelReload(); });
-  document.getElementById('isHasta').addEventListener('change', e=>{ IndSelState.hasta = e.target.value; indSelReload(); });
-  document.getElementById('isSearch').addEventListener('input', e=>{ IndSelState.q = e.target.value; indSelRenderBody(); });
-  await indSelReload();
 }
-async function indSelReload(){
-  let query = sb.from('sellado_registros').select('*').order('fecha',{ascending:true});
-  if(IndSelState.desde) query = query.gte('fecha', IndSelState.desde);
-  if(IndSelState.hasta) query = query.lte('fecha', IndSelState.hasta);
-  const { data, error } = await query.limit(2000);
-  indSelRowsCache = error ? [] : (data||[]);
-  indSelRenderBody();
-}
-function indSelFlatten(){
-  const flat = [];
-  (indSelRowsCache||[]).forEach(row=>{
-    (row.items||[]).forEach(it=>{
-      flat.push({ ...it, fecha: row.fecha, tipo_actividad: row.tipo_actividad, nombre_actividad: row.nombre_actividad });
-    });
-  });
-  return flat;
-}
-function indSelRenderBody(){
-  const wrap = document.getElementById('isBody');
-  if(!wrap) return;
-  let rows = indSelFlatten();
-  const q = (IndSelState.q||'').trim().toUpperCase();
-  if(q) rows = rows.filter(r=>(r.item_codigo||'').toUpperCase().includes(q) || (r.item_nombre||'').toUpperCase().includes(q));
-  if(!rows.length){ wrap.innerHTML = '<div class="empty-state">Sin datos de Sellado en este rango.</div>'; return; }
 
-  const selladoRows = rows.filter(r=>r.unidades_hora!=null);
-  const totalMin = rows.reduce((s,r)=>s+Number(r.minutos_realizado||0),0);
-  const avgPct = selladoRows.length ? selladoRows.reduce((s,r)=>s+Number(r.pct_cumplimiento||0),0)/selladoRows.length : null;
+/* ---------------- Entregas ---------------- */
+async function indRenderEntregasTab(){
+  const root = document.getElementById('indRoot');
+  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  const { desde, hasta } = indRangoFechas();
+  const [{ data: entregas }, { data: despachos }] = await Promise.all([
+    sb.from('entregas').select('*').gte('fecha', desde).lte('fecha', hasta),
+    sb.from('despacho_registros').select('entrega_id, hora_llegada').gte('fecha', desde).lte('fecha', hasta)
+  ]);
+  const rows = entregas || [];
+  const horaLlegadaPorEntrega = {};
+  (despachos||[]).forEach(d=>{ if(d.entrega_id) horaLlegadaPorEntrega[d.entrega_id] = d.hora_llegada; });
 
-  const porProducto = {};
-  selladoRows.forEach(r=>{
-    const key = r.item_codigo || '—';
-    if(!porProducto[key]) porProducto[key] = { nombre:r.item_nombre, uh:[], meta:r.meta_selladora, pct:[] };
-    porProducto[key].uh.push(Number(r.unidades_hora||0));
-    porProducto[key].pct.push(Number(r.pct_cumplimiento||0));
-  });
-  const productosArr = Object.keys(porProducto).map(k=>{
-    const p = porProducto[k];
-    const avgUh = p.uh.reduce((a,b)=>a+b,0)/p.uh.length;
-    const avgPctP = p.pct.reduce((a,b)=>a+b,0)/p.pct.length;
-    return { codigo:k, nombre:p.nombre, avgUh, meta:p.meta, avgPct: avgPctP };
-  }).sort((a,b)=>b.avgPct-a.avgPct);
-  const maxPct = Math.max(1, ...productosArr.map(p=>p.avgPct));
-
-  const porActividad = {};
-  rows.forEach(r=>{
-    const key = r.tipo_actividad;
-    porActividad[key] = (porActividad[key]||0) + Number(r.minutos_realizado||0);
-  });
-  const actividadArr = Object.keys(porActividad).map(k=>{
-    const meta = SELLADO_ACTIVIDADES.find(a=>a.key===k);
-    return { key:k, label: meta?meta.label:k, minutos: porActividad[k] };
-  }).sort((a,b)=>b.minutos-a.minutos);
-  const maxMin = Math.max(1, ...actividadArr.map(a=>a.minutos));
+  const completadas = rows.filter(e=>e.completado);
+  const conLlegada = completadas.filter(e=>horaLlegadaPorEntrega[e.id] && e.hora_entrega);
+  const aTiempo = conLlegada.filter(e=>horaLlegadaPorEntrega[e.id] <= e.hora_entrega);
+  const pctATiempo = conLlegada.length ? aTiempo.length/conLlegada.length : null;
+  const clientesDistintos = new Set(rows.map(e=>e.cliente).filter(Boolean)).size;
 
   const porDia = {};
-  selladoRows.forEach(r=>{
-    if(!porDia[r.fecha]) porDia[r.fecha] = [];
-    porDia[r.fecha].push(Number(r.pct_cumplimiento||0));
+  rows.forEach(e=>{ if(!porDia[e.fecha]) porDia[e.fecha]={ok:0,pend:0}; e.completado?porDia[e.fecha].ok++:porDia[e.fecha].pend++; });
+  const diasOrdenados = Object.keys(porDia).sort();
+
+  const porProducto = {};
+  rows.forEach(e=>(e.items||[]).forEach(it=>{
+    const k = it.item_nombre || it.item_codigo || '(sin producto)';
+    porProducto[k] = (porProducto[k]||0) + Math.round(Number(it.cantidad)||0);
+  }));
+  const topProductos = Object.entries(porProducto).sort((a,b)=>b[1]-a[1]).slice(0,6);
+  const maxProd = topProductos.length ? topProductos[0][1] : 1;
+
+  const porCliente = {};
+  rows.forEach(e=>{
+    const c = e.cliente || '(sin cliente)';
+    if(!porCliente[c]) porCliente[c] = { oc:0, ok:0 };
+    porCliente[c].oc++;
+    if(e.completado) porCliente[c].ok++;
   });
-  const dias = Object.keys(porDia).sort();
-  const pctPorDia = dias.map(d=>({ fecha:d, pct: porDia[d].reduce((a,b)=>a+b,0)/porDia[d].length }));
-  const maxPctDia = Math.max(0.01, ...pctPorDia.map(x=>x.pct));
+  const filasCliente = Object.entries(porCliente).map(([n,v])=>({ nombre:n, oc:v.oc, pct: v.oc?v.ok/v.oc:null })).sort((a,b)=>b.oc-a.oc);
 
-  wrap.innerHTML = `
-    <div class="parada-count" style="margin-bottom:14px;">
-      <div class="pc"><div class="n">${rows.length}</div><div class="l">Ítem(s) registrados</div></div>
-      <div class="pc"><div class="n">${fmtNum(totalMin)}</div><div class="l">Min. totales</div></div>
-      <div class="pc"><div class="n">${avgPct!=null?(avgPct*100).toFixed(0)+'%':'—'}</div><div class="l">% Cumplimiento prom.</div></div>
+  root.innerHTML = `
+    <div class="ind-kpi-row">
+      <div class="ind-kpi-card"><div class="lbl">Entregas a tiempo</div><div class="val">${indFmtPct(pctATiempo)}<small>%</small></div><div class="sub2">${conLlegada.length?(conLlegada.length-aTiempo.length)+' de '+conLlegada.length+' se retrasaron':'Sin datos de hora de llegada'}</div><div class="bar"><i style="width:${indFmtPct(pctATiempo)||0}%;background:var(--ok);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Órdenes de compra</div><div class="val">${rows.length}</div><div class="sub2">En este rango</div><div class="bar"><i style="width:60%;background:var(--traza);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Completadas</div><div class="val">${completadas.length}<small>/${rows.length}</small></div><div class="sub2">${rows.length-completadas.length} pendiente(s) de despachar</div><div class="bar"><i style="width:${rows.length?Math.round(completadas.length/rows.length*100):0}%;background:var(--ok);"></i></div></div>
+      <div class="ind-kpi-card"><div class="lbl">Clientes distintos</div><div class="val">${clientesDistintos}</div><div class="sub2">En este rango</div><div class="bar"><i style="width:50%;background:var(--personal);"></i></div></div>
     </div>
-
-    <div class="section-title">Tendencia de % cumplimiento por día (sellado)</div>
-    ${pctPorDia.length ? pctPorDia.map(d=>`
-      <div style="margin-bottom:8px;">
-        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;"><span>${ddMMyy(d.fecha)}</span><span>${(d.pct*100).toFixed(0)}%</span></div>
-        <div style="background:var(--line);border-radius:6px;height:9px;overflow:hidden;"><div style="width:${(d.pct/maxPctDia)*100}%;height:100%;background:var(--datos);"></div></div>
+    <div class="ind-grid2">
+      <div class="ind-panel">
+        <h3>Entregas por día</h3>
+        <div class="sub2">Completadas vs. pendientes</div>
+        ${diasOrdenados.length ? `<div class="ind-week">${diasOrdenados.map(f=>{
+          const d = porDia[f]; const total = d.ok+d.pend;
+          const bg = total===0?'var(--bg)':d.pend>0?'rgba(217,119,6,.14)':'rgba(5,150,105,.12)';
+          const col = total===0?'var(--muted)':d.pend>0?'var(--personal)':'var(--ok)';
+          return `<div class="d" style="background:${bg};color:${col};"><div class="dd">${total}</div>${ddMMyy(f)}${d.pend?`<br><span style="opacity:.8;">${d.pend} pend.</span>`:''}</div>`;
+        }).join('')}</div>` : '<div class="empty-state">Sin entregas en este rango</div>'}
       </div>
-    `).join('') : '<div class="empty-state">Sin datos suficientes</div>'}
-
-    <div class="section-title">% Cumplimiento promedio por producto (sellado)</div>
-    ${productosArr.length ? productosArr.map(p=>`
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;">
-          <span><b>${escHtml(p.codigo)}</b> ${escHtml(p.nombre||'')}</span>
-          <span>${(p.avgPct*100).toFixed(0)}% · U/H ${fmtNum(p.avgUh)} / meta ${fmtNum(p.meta||0)}</span>
-        </div>
-        <div style="background:var(--line);border-radius:6px;height:10px;overflow:hidden;">
-          <div style="width:${Math.min(100,(p.avgPct/maxPct)*100)}%;height:100%;background:var(--materia);"></div>
-        </div>
+      <div class="ind-panel">
+        <h3>Productos más despachados</h3>
+        <div class="sub2">Cantidad total en este rango</div>
+        ${topProductos.length ? topProductos.map(([n,c])=>`<div class="ind-row"><div class="name">${escHtml(n)}</div>${indTrack(c/maxProd,1)}<div class="pct">${fmtNum(c)}</div></div>`).join('') : '<div class="empty-state">Sin ítems en este rango</div>'}
       </div>
-    `).join('') : '<div class="empty-state">Sin datos de sellado en este rango</div>'}
-
-    <div class="section-title">Minutos totales por actividad</div>
-    ${actividadArr.map(a=>`
-      <div style="margin-bottom:10px;">
-        <div style="display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:3px;">
-          <span>${escHtml(a.label)}</span><span>${fmtNum(a.minutos)} min</span>
-        </div>
-        <div style="background:var(--line);border-radius:6px;height:10px;overflow:hidden;">
-          <div style="width:${(a.minutos/maxMin)*100}%;height:100%;background:var(--paradas);"></div>
-        </div>
-      </div>
-    `).join('')}
+    </div>
+    <div class="ind-panel">
+      <h3>Cumplimiento por cliente</h3>
+      <div class="sub2">% de órdenes ya completadas, en este rango</div>
+      ${filasCliente.length ? `<table class="ind-table"><thead><tr><th>Cliente</th><th class="num">OC</th><th class="num">Completadas</th><th>&nbsp;</th></tr></thead><tbody>
+        ${filasCliente.map(c=>`<tr><td class="ind-pname">${escHtml(c.nombre)}</td><td class="num">${c.oc}</td><td class="num">${indFmtPct(c.pct)}%</td><td>${indPill(c.pct)}</td></tr>`).join('')}
+      </tbody></table>` : '<div class="empty-state">Sin entregas en este rango</div>'}
+    </div>
   `;
 }
 
