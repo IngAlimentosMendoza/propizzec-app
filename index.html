@@ -471,6 +471,16 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .ent-toolbar-right{display:flex;gap:8px;flex-wrap:wrap;}
 .ent-calendar-wrap{overflow-x:auto;overflow-y:auto;max-height:calc(100vh - 170px);border:1px solid var(--line);border-radius:var(--radius);background:var(--card);}
 .ent-calendar{display:grid;grid-template-columns:64px repeat(7,minmax(160px,1fr));min-width:1190px;position:relative;}
+.ent-calendar.ent-un-dia{min-width:0;grid-template-columns:52px 1fr;}
+.ent-day-picker{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;margin-bottom:6px;}
+.ent-day-chip{flex:0 0 auto;min-width:52px;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:7px 4px;text-align:center;font-size:11px;color:var(--muted);font-weight:600;}
+.ent-day-chip .dn{display:block;font-size:15px;font-weight:700;color:var(--ink);margin-top:1px;}
+.ent-day-chip.active{background:var(--datos);border-color:var(--datos);color:#fff;}
+.ent-day-chip.active .dn{color:#fff;}
+.ent-day-chip.ent-hoy:not(.active){border-color:var(--datos);color:var(--datos);}
+.ent-daynav{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;}
+.ent-daynav button{flex:0 0 auto;width:38px;height:38px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:16px;color:var(--ink);}
+.ent-daynav .dtxt{font-weight:700;font-size:14px;text-align:center;flex:1;}
 .ent-corner{position:sticky;top:0;left:0;z-index:3;background:var(--card);border-bottom:1px solid var(--line);border-right:1px solid var(--line);}
 .ent-daycol-header{position:sticky;top:0;z-index:2;background:#F8FAFC;border-bottom:1px solid var(--line);border-right:1px solid var(--line);
   display:flex;flex-direction:column;align-items:center;justify-content:center;padding:4px;}
@@ -4857,11 +4867,25 @@ function openInicioFin(cronogramaIngId, cual){
 function openCantidadDirecta(cronogramaIngId){
   showValorScreen(cronogramaIngId, 'directo', '');
 }
+// Busca el nombre del ingrediente a partir del id de su fila en
+// cronograma_ingredientes, recorriendo todas las órdenes en caché.
+function crNombreIngredientePorCiId(cronogramaIngId){
+  for(const row of (cacheCronograma||[])){
+    const ci = (row.cronograma_ingredientes||[]).find(x=>x.id===cronogramaIngId);
+    if(ci){
+      const item = (cacheItems||[]).find(i=>i.codigo===ci.item_codigo);
+      return item ? item.nombre : ci.item_codigo;
+    }
+  }
+  return null;
+}
 function showValorScreen(cronogramaIngId, cual, currentVal){
   const titulo = cual==='inicio' ? 'Peso inicial' : cual==='fin' ? 'Peso final (sobrante)' : 'Cantidad utilizada';
+  const nombreIng = crNombreIngredientePorCiId(cronogramaIngId);
   openModal(`
     <h3>${titulo}</h3>
-    <div class="msub">Escribe el valor directamente o usa la calculadora</div>
+    <div class="msub">${nombreIng ? escHtml(nombreIng) : 'Escribe el valor directamente o usa la calculadora'}</div>
+    ${nombreIng ? '<div class="sub" style="margin-bottom:12px;">Escribe el valor directamente o usa la calculadora</div>' : ''}
     <div class="field">
       <label>Valor</label>
       <div style="display:flex;gap:8px;">
@@ -4878,20 +4902,21 @@ function showValorScreen(cronogramaIngId, cual, currentVal){
 }
 function ifOpenCalc(cronogramaIngId, cual){
   const cur = document.getElementById('ifValor') ? document.getElementById('ifValor').value : '';
+  const nombreIng = crNombreIngredientePorCiId(cronogramaIngId);
   openCalculator(cur, function(v){
     if(modalStack.length) modalStack.pop(); // descarta la versión vieja de este mismo formulario que iba a quedar en la pila
     showValorScreen(cronogramaIngId, cual, v!==undefined ? v : cur);
-  });
+  }, nombreIng);
 }
 /* ---------------- Calculadora genérica reutilizable ---------------- */
 let calcExpr = '';
 let calcReturnFn = null;
-function openCalculator(startVal, returnFn){
+function openCalculator(startVal, returnFn, contexto){
   calcReturnFn = returnFn || null;
   calcExpr = (startVal!=null && /^-?\d+([.,]\d+)?$/.test(String(startVal).trim())) ? String(startVal).replace(',','.') : '';
   openModal(`
     <h3>Calculadora</h3>
-    <div class="msub">Realiza la operación y presiona guardar</div>
+    <div class="msub">${contexto ? escHtml(contexto) : 'Realiza la operación y presiona guardar'}</div>
     <div class="calc-display" id="calcDisplay">0</div>
     <div class="calc-grid">
       <button class="clr" onclick="calcClear()">C</button>
@@ -6501,9 +6526,102 @@ function entCambiarSemana(delta){
 }
 function entIrHoy(){
   EntState.semanaInicio = entLunesDe(todayISO());
+  EntState.diaSeleccionado = todayISO();
   entLoad().then(entRenderBody);
 }
+// En pantallas angostas (celular) se muestra un solo día a la vez, a todo el
+// ancho, con botones para moverse — así se ve completo sin desplazarse de
+// lado a lado. En pantallas más anchas se sigue viendo la semana completa.
+function entEsMovil(){
+  return window.innerWidth <= 700;
+}
+function entSeleccionarDia(fecha){
+  EntState.diaSeleccionado = fecha;
+  entRenderBody();
+}
+function entMoverDia(delta){
+  const nuevoDia = entSumarDias(EntState.diaSeleccionado || todayISO(), delta);
+  EntState.diaSeleccionado = nuevoDia;
+  // Si el nuevo día se sale de la semana ya cargada, se carga la semana que le corresponde.
+  const lunesNuevo = entLunesDe(nuevoDia);
+  if(lunesNuevo !== EntState.semanaInicio){
+    EntState.semanaInicio = lunesNuevo;
+    entLoad().then(entRenderBody);
+  } else {
+    entRenderBody();
+  }
+}
 function entRenderBody(){
+  const root = document.getElementById('entRoot');
+  if(!root) return;
+  if(entEsMovil()) return entRenderBodyDia();
+  return entRenderBodySemana();
+}
+let entResizeTimer = null;
+window.addEventListener('resize', ()=>{
+  if(!document.getElementById('entRoot')) return;
+  clearTimeout(entResizeTimer);
+  entResizeTimer = setTimeout(entRenderBody, 200);
+});
+// Vista para celular: un solo día, a todo el ancho de la pantalla.
+function entRenderBodyDia(){
+  const root = document.getElementById('entRoot');
+  const lunes = EntState.semanaInicio;
+  const dias = Array.from({length:7}, (_,i)=>entSumarDias(lunes, i));
+  const hoy = todayISO();
+  if(!EntState.diaSeleccionado || !dias.includes(EntState.diaSeleccionado)) EntState.diaSeleccionado = dias.includes(hoy) ? hoy : lunes;
+  const f = EntState.diaSeleccionado;
+  const idx = dias.indexOf(f);
+
+  const eventosDelDia = (cacheEntregas||[]).filter(e=>e.fecha===f);
+  const horasConEventos = new Set();
+  eventosDelDia.forEach(e=>{ const h=parseInt((e.hora_entrega||'0').split(':')[0],10); if(!isNaN(h)) horasConEventos.add(h); });
+  const alturaMaxPorHora = {};
+  eventosDelDia.forEach(e=>{
+    const h = parseInt((e.hora_entrega||'0').split(':')[0], 10);
+    if(isNaN(h)) return;
+    alturaMaxPorHora[h] = Math.max(alturaMaxPorHora[h]||0, entAlturaTarjeta(e));
+  });
+  const alturas = Array.from({length:24}, (_,h)=> horasConEventos.has(h) ? Math.max(ENT_ROW_H, (alturaMaxPorHora[h]||0) + 8) : ENT_ROW_H_COMPACTO);
+  const offsets = []; let acumulado = 0;
+  alturas.forEach(a=>{ offsets.push(acumulado); acumulado += a; });
+  EntState._alturas = alturas; EntState._offsets = offsets;
+
+  const [y,m,dd] = f.split('-');
+  root.innerHTML = `
+    <div class="ent-toolbar">
+      <div class="ent-toolbar-left"><h2 style="margin:0;">📅 Entregas</h2></div>
+      <div class="ent-toolbar-right">
+        <button class="btn primary" style="--accent:var(--paradas)" onclick="entAbrirNueva('${f}')">+ Nueva entrega</button>
+        <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios</button>
+        <button class="btn" onclick="entExportarExcelPorCliente(cacheEntregas, 'Entregas_semana_'+EntState.semanaInicio)">⬇ Excel</button>
+      </div>
+    </div>
+    <div class="ent-day-picker">
+      ${dias.map((d,i)=>{
+        const [,,ddi] = d.split('-');
+        return `<button class="ent-day-chip ${d===f?'active':''} ${d===hoy?'ent-hoy':''}" onclick="entSeleccionarDia('${d}')">${ENT_DIAS[i].slice(0,3)}<span class="dn">${ddi}</span></button>`;
+      }).join('')}
+    </div>
+    <div class="ent-daynav">
+      <button onclick="entMoverDia(-1)">‹</button>
+      <div class="dtxt">${ENT_DIAS[idx]} ${dd}/${m}${f===hoy?' · Hoy':''}</div>
+      <button onclick="entMoverDia(1)">›</button>
+    </div>
+    <div class="ent-calendar-wrap">
+      <div class="ent-calendar ent-un-dia" style="grid-template-rows: ${alturas.map(a=>a+'px').join(' ')};">
+        ${Array.from({length:24}, (_,h)=>`<div class="ent-hour-label ${horasConEventos.has(h)?'':'ent-hora-compacta'}" style="grid-row:${h+1};">${String(h).padStart(2,'0')}:00</div>`).join('')}
+        <div class="ent-daycol" style="grid-column:2; grid-row:1 / span 24;">
+          ${Array.from({length:24},(_,h)=>`<div class="ent-hourline" style="top:${offsets[h]}px;"></div>`).join('')}
+          <div class="ent-events" id="entEvents_${f}"></div>
+        </div>
+      </div>
+    </div>
+  `;
+  entRenderEventosDia(f);
+}
+// Vista de escritorio/tablet: la semana completa, como estaba.
+function entRenderBodySemana(){
   const root = document.getElementById('entRoot');
   if(!root) return;
   const lunes = EntState.semanaInicio;
