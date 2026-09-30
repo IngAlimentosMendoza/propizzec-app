@@ -2526,6 +2526,8 @@ function renderModule(mod){
    ============================================================ */
 let modalStack = [];
 let currentModalHook = null; // función a ejecutar en vez de restaurar la ventana anterior tal cual
+let modalHistoryDepth = 0; // cuántas ventanas hay abiertas, contando también las anidadas — para que el botón "atrás" del celular cierre de a una, en vez de salir de la app
+let suprimirPopstate = false;
 function openModal(html, onClose){
   const bg = document.getElementById('modalBg');
   if(bg.classList.contains('show')){
@@ -2548,32 +2550,59 @@ function openModal(html, onClose){
   currentModalHook = onClose || null;
   document.getElementById('modalPanel').innerHTML = `<button class="mclose" onclick="closeModal()">✕</button>${html}`;
   bg.classList.add('show');
+  // Cada ventana que se abre (incluidas las anidadas) queda registrada como
+  // un paso en el historial del navegador, para que el botón físico/gesto de
+  // "atrás" del celular cierre esta ventana en vez de salir de la app entera.
+  history.pushState({ propizzecModal: true }, '');
+  modalHistoryDepth++;
 }
-function closeModal(){
+function closeModal(desdeBackFisico){
   // Si esta ventana tenía registrada una forma propia de "volver" (por ejemplo,
   // regenerar la ventana anterior con datos frescos en vez de una foto vieja),
   // se usa esa, sin importar si se cerró con el botón "Cerrar", con la "✕" de
-  // la esquina, o tocando fuera de la ventana — así nunca se ve como "borrado".
+  // la esquina, tocando fuera de la ventana, o con el botón "atrás" del celular
+  // — así nunca se ve como "borrado".
   if(currentModalHook){
     const hook = currentModalHook;
     currentModalHook = null;
     hook();
-    return;
-  }
-  if(modalStack.length){
+  } else if(modalStack.length){
     const prev = modalStack.pop();
     currentModalHook = prev.hook;
     document.getElementById('modalPanel').innerHTML = prev.html;
-    return;
+  } else {
+    document.getElementById('modalBg').classList.remove('show');
+    document.getElementById('modalPanel').innerHTML = '';
   }
-  document.getElementById('modalBg').classList.remove('show');
-  document.getElementById('modalPanel').innerHTML = '';
+  if(modalHistoryDepth>0){
+    modalHistoryDepth--;
+    if(!desdeBackFisico){
+      // Se cerró desde la app (botón ✕, "Cancelar", tocar fuera) — hay que
+      // consumir el paso de historial que se había agregado al abrirla, para
+      // no ir acumulando pasos "fantasma".
+      suprimirPopstate = true;
+      history.back();
+    }
+    // Si vino del botón físico, el navegador ya retrocedió el historial solo
+    // con su propio gesto — no hace falta tocar nada más aquí.
+  }
 }
+window.addEventListener('popstate', ()=>{
+  if(suprimirPopstate){ suprimirPopstate = false; return; }
+  if(document.getElementById('modalBg').classList.contains('show')){
+    closeModal(true);
+  }
+});
 function closeModalAll(){
   modalStack = [];
   currentModalHook = null;
   document.getElementById('modalBg').classList.remove('show');
   document.getElementById('modalPanel').innerHTML = '';
+  if(modalHistoryDepth>0){
+    suprimirPopstate = true;
+    history.go(-modalHistoryDepth);
+    modalHistoryDepth = 0;
+  }
 }
 document.getElementById('modalBg').addEventListener('click', e=>{
   if(e.target.id === 'modalBg') closeModal();
@@ -9024,6 +9053,7 @@ const ETIQ_FUNDAS_NOMBRES = [
   'CONTRAETIQUETA PARA CHURROS',
   'ETIQUETA PARA CHURROS',
   'FUNDAS LASAÑA BOLOÑESA 300G',
+  'FUNDA LASAÑA POLLO',
   'FUNDAS PIZZA CONGELADA DE CARNICERA BOPP MATE 33X35cm X50MICRAS',
   'FUNDAS PIZZA CONGELADA DE JAMON Y QUESO BOPP MATE PP 33X35CM X50MICRAS',
   'FUNDAS PIZZA CONGELADA DE PEPPERONI BOPP MATE 33X35cm X50MICRAS',
