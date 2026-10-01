@@ -676,6 +676,27 @@ let sb = null;
 if(window.pdfjsLib){ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; }
 try{ sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY); }
 catch(e){ console.error('No se pudo iniciar Supabase', e); }
+// Marca cuándo fue la última vez que ESTE dispositivo guardó algo — sin
+// tener que tocar cada función de guardado una por una. La sincronización en
+// vivo usa esto para no refrescar la pantalla por los propios cambios del
+// usuario (que ya se ven solos al guardar), solo por los de otro dispositivo.
+let ultimaEscrituraPropia = 0;
+let refrescoSilenciosoActivo = false; // true mientras se refresca por un cambio de otro dispositivo, sin que el usuario lo haya pedido
+if(sb){
+  const sbFromOriginal = sb.from.bind(sb);
+  sb.from = function(tabla){
+    const builder = sbFromOriginal(tabla);
+    ['insert','update','delete','upsert'].forEach(metodo=>{
+      if(typeof builder[metodo] !== 'function') return;
+      const original = builder[metodo].bind(builder);
+      builder[metodo] = function(...args){
+        ultimaEscrituraPropia = Date.now();
+        return original(...args);
+      };
+    });
+    return builder;
+  };
+}
 
 /* ===== Panel de Indicadores embebido (KPI Producción) ===== */
 const KPI_PANEL_HTML = `
@@ -2549,17 +2570,27 @@ function manejarCambioEnVivo(){
   // vez, en vez de una vez por cada cambio.
   clearTimeout(sincTimer);
   sincTimer = setTimeout(()=>{
-    refrescarPantallaActualSiEsSeguro();
+    // Si ESTE dispositivo acaba de guardar algo hace muy poco, este aviso es
+    // casi seguro el eco de ese mismo cambio — ya se ve solo al guardar, así
+    // que no hace falta (y sería molesto) refrescar toda la pantalla encima.
+    if(Date.now() - ultimaEscrituraPropia < 2500) return;
+    refrescarPantallaActualSiEsSeguro(true);
   }, 700);
 }
 // Usada tanto por la sincronización en vivo como por el refresco al volver
 // a la pestaña: refresca la pantalla actual, salvo que haya una ventana
-// abierta (para no interrumpir algo que se esté llenando).
-function refrescarPantallaActualSiEsSeguro(){
+// abierta (para no interrumpir algo que se esté llenando). Conserva el
+// desplazamiento y, en Cronograma/Monitoreo, la fecha que se estaba viendo
+// — para que no se sienta como "salir y volver a entrar".
+function refrescarPantallaActualSiEsSeguro(silencioso){
   const bg = document.getElementById('modalBg');
   if(bg && bg.classList.contains('show')) return;
   if(currentModule && document.getElementById('appShell') && document.getElementById('appShell').style.display !== 'none'){
+    const scrollPrevio = window.scrollY;
+    refrescoSilenciosoActivo = !!silencioso;
     renderModule(currentModule);
+    refrescoSilenciosoActivo = false;
+    window.scrollTo({top:scrollPrevio, behavior:'instant'});
     calcularAlertas();
   }
 }
@@ -2840,7 +2871,7 @@ document.addEventListener('visibilitychange', ()=>{
   const estuvoOcultoMs = Date.now() - momentoOculto;
   momentoOculto = null;
   if(estuvoOcultoMs < 8000) return; // parpadeo breve, no hace falta refrescar
-  refrescarPantallaActualSiEsSeguro();
+  refrescarPantallaActualSiEsSeguro(true);
 });
 
 /* ============================================================
@@ -4006,7 +4037,7 @@ async function planLoad(force){
 
 async function renderPlanificacion(){
   const app = document.getElementById('app');
-  planFechaActual = todayISO(); // al entrar fresco al módulo, siempre arranca en hoy
+  if(!refrescoSilenciosoActivo) planFechaActual = todayISO(); // al entrar fresco al módulo, siempre arranca en hoy — pero un refresco en segundo plano conserva la fecha que se estaba viendo
   app.innerHTML = `
     <div class="tabbar">
       <button class="tabbtn ${PlanState.tab==='cronograma'?'active':''}" data-tab="cronograma" onclick="planGoTab('cronograma')">Cronograma</button>
@@ -7813,7 +7844,7 @@ async function calCuarEliminar(id){
 
 async function renderMonitoreo(){
   const app = document.getElementById('app');
-  planFechaActual = todayISO(); // al entrar fresco al módulo, siempre arranca en hoy
+  if(!refrescoSilenciosoActivo) planFechaActual = todayISO(); // al entrar fresco al módulo, siempre arranca en hoy — pero un refresco en segundo plano conserva la fecha que se estaba viendo
   app.innerHTML = `
     <div class="tabbar">
       <button class="tabbtn ${MonState.tab==='produccion'?'active':''}" data-tab="produccion" onclick="monGoTab('produccion')">Producción Operativa</button>
