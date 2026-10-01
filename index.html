@@ -2555,26 +2555,169 @@ const TABLAS_SINCRONIZADAS = [
 ];
 let canalSincronizacion = null;
 let sincTimer = null;
+let tablasPendientesSinc = new Set();
 function iniciarSincronizacionEnVivo(){
   if(!sb || canalSincronizacion) return;
   let canal = sb.channel('propizzec-cambios');
   TABLAS_SINCRONIZADAS.forEach(tabla=>{
-    canal = canal.on('postgres_changes', { event:'*', schema:'public', table: tabla }, manejarCambioEnVivo);
+    canal = canal.on('postgres_changes', { event:'*', schema:'public', table: tabla }, (payload)=>manejarCambioEnVivo(tabla, payload));
   });
   canal.subscribe();
   canalSincronizacion = canal;
 }
-function manejarCambioEnVivo(){
+// Qué caché (arreglo que ya usa la pantalla para dibujarse) corresponde a
+// cada tabla — para poder actualizar la fila exacta ahí mismo, en memoria,
+// apenas llega el aviso, sin esperar a redibujar nada.
+const CACHE_POR_TABLA = {
+  cronograma:          { get:()=>cacheCronograma,    set:(a)=>{ cacheCronograma=a; } },
+  entregas:            { get:()=>cacheEntregas,      set:(a)=>{ cacheEntregas=a; } },
+  items:               { get:()=>cacheItems,         set:(a)=>{ cacheItems=a; } },
+  registro_produccion: { get:()=>MonRegState.rows,   set:(a)=>{ MonRegState.rows=a; } },
+  despacho_registros:  { get:()=>DespRegState.rows,  set:(a)=>{ DespRegState.rows=a; } },
+  etiquetado_registros:{ get:()=>cacheEtiqRegistros, set:(a)=>{ cacheEtiqRegistros=a; } },
+  bodega_registros:    { get:()=>BodRegState.rows,   set:(a)=>{ BodRegState.rows=a; } },
+};
+// El Kardex es distinto a las demás: la pantalla no se dibuja a partir de
+// cada movimiento guardado, sino de un SALDO ya calculado por producto (una
+// vista en Supabase, v_kardex_stock). Por eso, cuando cambia un movimiento,
+// no se puede "insertar/actualizar esa fila" como en las demás — hay que
+// volver a preguntar el saldo de ESE producto nomás (uno solo, no todos) y
+// reemplazar solo esa fila de la caché.
+async function actualizarCacheStockPorMovimiento(payload){
+  const codigo = (payload.new && payload.new.item_codigo) || (payload.old && payload.old.item_codigo);
+  if(!codigo || !cacheStock) return;
+  const { data } = await sb.from('v_kardex_stock').select('*').eq('codigo', codigo);
+  const resto = cacheStock.filter(r=>r.codigo !== codigo);
+  cacheStock = (data && data.length) ? [...resto, ...data] : resto;
+}
+// Sellado tampoco es un arreglo simple: SelladoState.sesiones es un objeto
+// con una sesión (fila de sellado_registros, con todos sus ítems adentro)
+// por cada máquina/actividad del día — se reemplaza la sesión completa de la
+// máquina que cambió, dejando las demás tal cual.
+function actualizarCacheSellado(payload){
+  const row = payload.new || payload.old;
+  if(!row || row.fecha !== SelladoState.fecha) return; // es de otro día, no corresponde a lo que está cargado ahora
+  if(payload.eventType === 'DELETE'){
+    delete SelladoState.sesiones[row.tipo_actividad];
+  } else {
+    SelladoState.sesiones[row.tipo_actividad] = payload.new;
+  }
+  SelladoState.abiertas = Object.values(SelladoState.sesiones).filter(x=>x.estado==='abierto').map(x=>x.tipo_actividad);
+  if(SelladoState.activa && !SelladoState.abiertas.includes(SelladoState.activa)) SelladoState.activa = SelladoState.abiertas[0] || null;
+}
+// Aplica el cambio (insertar/actualizar/eliminar) directo sobre la caché en
+// memoria. En una actualización, se combina con lo que ya había en esa fila
+// (en vez de reemplazarla entera) porque algunas pantallas le agregan datos
+// extra a la fila (como la lista de ingredientes) que el aviso de Supabase,
+// al ser de una sola tabla, no trae consigo.
+function aplicarCambioEnCache(tabla, payload){
+  const cfg = CACHE_POR_TABLA[tabla];
+  if(!cfg) return;
+  const arr = cfg.get() || [];
+  if(payload.eventType === 'DELETE'){
+    cfg.set(arr.filter(r=>r.id !== payload.old.id));
+  } else {
+    const idx = arr.findIndex(r=>r.id === payload.new.id);
+    if(idx>=0){ const copia = arr.slice(); copia[idx] = { ...copia[idx], ...payload.new }; cfg.set(copia); }
+    else { cfg.set([...arr, payload.new]); }
+  }
+}
+// Para las tablas de aquí, en vez de redibujar toda la pantalla, se vuelve a
+// pintar SOLO la lista de la pantalla correspondiente (si es la que se está
+// viendo en ese momento) — la caché ya quedó al día un paso antes. Si la
+// pantalla actual no es esa, no hace nada (no hace falta refrescar algo que
+// no se está mirando).
+const REFRESCO_GRANULAR_POR_TABLA = {
+  cronograma: ()=>{
+    if(currentModule==='planificacion' && PlanState && PlanState.tab==='cronograma'){ renderCronogramaTab(); }
+    // Monitoreo también se dibuja a partir de cacheCronograma (ya al día) —
+    // solo si se está viendo la lista, no en medio de verificar una orden.
+    if(currentModule==='monitoreo' && MonState && MonState.tab==='produccion' && !MonState.selId){ renderMonProduccion(); }
+    // Etiquetado arma su propia lista (hoy + atrasados) combinando Cronograma
+    // con sus propios registros — no es un simple parche de una fila, así que
+    // se vuelve a pedir y dibujar solo esa pestaña, si se está viendo.
+    if(currentModule==='etiquetado' && EtiqState && EtiqState.tab==='actividad'){ etiqLoad(true).then(()=>{ if(EtiqState.tab==='actividad') renderEtiqActividadTab(); }); }
+    return true; // registrada, aunque no sea la pantalla actual — no hace falta refresco completo
+  },
+  entregas: ()=>{
+    if(currentModule==='entregas'){ entRenderBody(); }
+    // Logística → Despachos muestra las entregas con su propia consulta
+    // (no comparte la caché de Entregas) — si se está viendo esa pestaña, se
+    // vuelve a pedir y dibujar solo esa lista, nada más del módulo.
+    if(currentModule==='despacho' && DespState && DespState.tab==='despachos'){ despRenderDespachosTab(); }
+    return true;
+  },
+  items: ()=>{
+    if(currentModule==='inventario' && InvState && InvState.tab==='items'){ renderItemsTab(); return true; }
+    return true;
+  },
+  kardex_movimientos: ()=>{
+    if(currentModule==='inventario' && InvState && InvState.tab==='kardex'){ renderKardexTab(); return true; }
+    return true;
+  },
+  sellado_registros: ()=>{
+    if(currentModule==='sellado' && SelTabState && SelTabState.tab==='actividades'){ selRenderActividades(); }
+    // Desperdicios (en Calidad) incluye lo que se da de baja desde Sellado →
+    // Ajuste — si se está viendo esa pestaña, se vuelve a calcular y dibujar.
+    if(currentModule==='calidad' && CalState && CalState.tab==='bajasmermas'){ renderCalBajasMermasTab(); }
+    return true;
+  },
+  registro_produccion: ()=>{
+    if(currentModule==='monitoreo' && MonState && MonState.tab==='registros' && !MonRegState.editing){ renderMonRegistrosList(); }
+    // La merma de proceso que se ve en Desperdicios (Calidad) sale de aquí también.
+    if(currentModule==='calidad' && CalState && CalState.tab==='bajasmermas'){ renderCalBajasMermasTab(); }
+    return true;
+  },
+  despacho_registros: ()=>{
+    if(currentModule==='despacho' && DespState && DespState.tab==='registros'){ despRenderRegistrosList(); return true; }
+    return true;
+  },
+  etiquetado_registros: ()=>{
+    if(currentModule!=='etiquetado') return true;
+    if(EtiqState.tab === 'registros'){ renderEtiqRegistrosList(); return true; }
+    if(EtiqState.tab === 'actividad'){ etiqLoad(true).then(()=>{ if(EtiqState.tab==='actividad') renderEtiqActividadTab(); }); return true; }
+    return true;
+  },
+  cuarentena_lotes: ()=>{
+    if(currentModule==='calidad' && CalState && CalState.tab==='cuarentena'){ renderCalCuarentenaTab(); return true; }
+    return true;
+  },
+  bodega_registros: ()=>{
+    if(currentModule==='bodega' && BodState && BodState.tab==='registros'){ bodRenderRegistrosList(); return true; }
+    return true;
+  },
+};
+async function manejarCambioEnVivo(tabla, payload){
+  if(tabla === 'kardex_movimientos') await actualizarCacheStockPorMovimiento(payload);
+  else if(tabla === 'sellado_registros') actualizarCacheSellado(payload);
+  else aplicarCambioEnCache(tabla, payload); // la caché se pone al día de inmediato, sin esperar
+  tablasPendientesSinc.add(tabla);
   // Pueden llegar varios avisos casi juntos (ej. al guardar una orden junto
   // con sus ingredientes) — se espera un instante y se refresca una sola
   // vez, en vez de una vez por cada cambio.
   clearTimeout(sincTimer);
   sincTimer = setTimeout(()=>{
+    const tablas = [...tablasPendientesSinc];
+    tablasPendientesSinc.clear();
     // Si ESTE dispositivo acaba de guardar algo hace muy poco, este aviso es
     // casi seguro el eco de ese mismo cambio — ya se ve solo al guardar, así
     // que no hace falta (y sería molesto) refrescar toda la pantalla encima.
     if(Date.now() - ultimaEscrituraPropia < 2500) return;
-    refrescarPantallaActualSiEsSeguro(true);
+    const bg = document.getElementById('modalBg');
+    if(bg && bg.classList.contains('show')) return; // no interrumpir algo abierto
+    let todasConPatchFino = true;
+    tablas.forEach(t=>{
+      if(REFRESCO_GRANULAR_POR_TABLA[t]) REFRESCO_GRANULAR_POR_TABLA[t]();
+      else todasConPatchFino = false;
+    });
+    if(!todasConPatchFino){
+      // Alguna de las tablas que cambiaron todavía no tiene su propio parche
+      // fino — de respaldo, se hace el refresco completo (ya suavizado: no
+      // pierde el lugar ni la fecha) para esas, en vez de dejarlas sin avisar.
+      refrescarPantallaActualSiEsSeguro(true);
+    } else {
+      calcularAlertas();
+    }
   }, 700);
 }
 // Usada tanto por la sincronización en vivo como por el refresco al volver
