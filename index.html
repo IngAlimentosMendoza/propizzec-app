@@ -142,6 +142,28 @@ header.top .harea .dot{width:8px;height:8px;border-radius:50%;background:#34D399
 @keyframes dotPulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55);}70%{box-shadow:0 0 0 7px rgba(52,211,153,0);}100%{box-shadow:0 0 0 0 rgba(52,211,153,0);}}
 header.top .btn.logout{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.2);padding:6px 10px;font-size:11.5px;box-shadow:none;}
 
+/* ============ Campana de alertas ============ */
+.alert-bell-wrap{position:relative;}
+.alert-bell{position:relative;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.2);color:#fff;width:36px;height:36px;border-radius:50%;font-size:16px;display:flex;align-items:center;justify-content:center;}
+.alert-bell.shake{animation:bellShake .5s ease;}
+@keyframes bellShake{0%,100%{transform:rotate(0);}15%{transform:rotate(14deg);}30%{transform:rotate(-12deg);}45%{transform:rotate(9deg);}60%{transform:rotate(-7deg);}75%{transform:rotate(4deg);}}
+.alert-badge{position:absolute;top:-3px;right:-3px;background:var(--danger);color:#fff;font-size:10px;font-weight:700;min-width:16px;height:16px;border-radius:9px;display:flex;align-items:center;justify-content:center;padding:0 3px;border:2px solid #1E293B;}
+.alert-dropdown{display:none;position:absolute;top:46px;right:0;width:340px;max-width:88vw;max-height:70vh;overflow-y:auto;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:400;}
+.alert-dropdown.show{display:block;}
+.alert-dropdown-head{padding:12px 14px;border-bottom:1px solid var(--line);font-weight:700;font-size:13.5px;color:var(--ink);display:flex;justify-content:space-between;align-items:center;}
+.alert-item{display:flex;gap:10px;padding:11px 14px;border-bottom:1px solid var(--line);cursor:pointer;align-items:flex-start;}
+.alert-item:hover{background:#FAFBFC;}
+.alert-item .ai-dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto;margin-top:5px;}
+.alert-item .ai-dot.alta{background:var(--danger);}
+.alert-item .ai-dot.media{background:var(--personal);}
+.alert-item .ai-body{flex:1;min-width:0;}
+.alert-item .ai-title{font-size:12.5px;font-weight:700;color:var(--ink);}
+.alert-item .ai-detail{font-size:11.5px;color:var(--muted);margin-top:2px;}
+.alert-dropdown-foot{padding:10px 14px;}
+.alert-empty{padding:28px 16px;text-align:center;color:var(--muted);font-size:12.5px;}
+.alert-group-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.3px;color:var(--muted);padding:10px 14px 4px;}
+
+
 #sideOverlay{display:none;position:fixed;inset:0;background:rgba(15,23,42,.5);z-index:90;}
 #sidebar{
   position:fixed;top:0;left:0;bottom:0;width:250px;background:#fff;z-index:100;
@@ -225,6 +247,9 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .reg-row .redit{flex:0 0 auto;width:30px;height:30px;border:none;background:#F1F5F9;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:14px;color:var(--muted);transition:background .12s ease;}
 .reg-row .redit:hover{background:#E2E8F0;}
 .empty-state{padding:34px 16px;text-align:center;color:var(--muted);font-size:13px;}
+.loading-state{padding:34px 16px;text-align:center;color:var(--muted);font-size:13px;display:flex;flex-direction:column;align-items:center;gap:10px;}
+.loading-state .spinner{width:22px;height:22px;border-radius:50%;border:3px solid var(--line);border-top-color:var(--datos);animation:spin .8s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg);}}
 
 /* ============ MODAL (generic) ============ */
 .modal-bg{display:none;position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:300;align-items:flex-end;justify-content:center;}
@@ -610,6 +635,12 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
       <small id="dbstat">Conectando…</small>
     </div>
     <div class="harea"><span class="dot" id="syncDot"></span><span id="areaBadge">—</span></div>
+    <div class="alert-bell-wrap">
+      <button class="alert-bell" id="alertBell" onclick="toggleAlertasDropdown()">
+        🔔<span class="alert-badge" id="alertBadge" style="display:none;">0</span>
+      </button>
+      <div class="alert-dropdown" id="alertDropdown"></div>
+    </div>
     <button class="btn logout" onclick="logout()">Salir</button>
   </header>
 
@@ -2480,6 +2511,57 @@ function enterApp(area){
     goModule(currentModule);
   }
   subscribeConnStatus();
+  // Primera revisión de alertas al entrar, y después cada 5 minutos mientras
+  // la aplicación esté abierta — sin que el usuario tenga que pedirla.
+  calcularAlertas();
+  if(window.alertasIntervalo) clearInterval(window.alertasIntervalo);
+  window.alertasIntervalo = setInterval(calcularAlertas, 5*60*1000);
+  iniciarSincronizacionEnVivo();
+}
+/* ============================================================
+   SINCRONIZACIÓN EN VIVO (Supabase Realtime)
+   Avisa de inmediato cuando otro dispositivo guarda, edita o elimina algo
+   en cualquiera de estas tablas, refrescando sola la pantalla que se esté
+   viendo — sin tener que cambiar de pestaña y volver.
+   ============================================================ */
+const TABLAS_SINCRONIZADAS = [
+  'cronograma','cronograma_ingredientes','cronograma_personal','paradas',
+  'registro_produccion','kardex_movimientos','sellado_registros',
+  'etiquetado_registros','cuarentena_lotes','entregas','despacho_registros',
+  'bodega_registros','catalogos','producto_codigos_cliente','metas_sellado',
+  'personal_planificacion','sellado_config_actividades','despacho_destinos',
+  'bodega_proveedores','bodega_conductores','config_horarios','usuarios_area'
+];
+let canalSincronizacion = null;
+let sincTimer = null;
+function iniciarSincronizacionEnVivo(){
+  if(!sb || canalSincronizacion) return;
+  let canal = sb.channel('propizzec-cambios');
+  TABLAS_SINCRONIZADAS.forEach(tabla=>{
+    canal = canal.on('postgres_changes', { event:'*', schema:'public', table: tabla }, manejarCambioEnVivo);
+  });
+  canal.subscribe();
+  canalSincronizacion = canal;
+}
+function manejarCambioEnVivo(){
+  // Pueden llegar varios avisos casi juntos (ej. al guardar una orden junto
+  // con sus ingredientes) — se espera un instante y se refresca una sola
+  // vez, en vez de una vez por cada cambio.
+  clearTimeout(sincTimer);
+  sincTimer = setTimeout(()=>{
+    refrescarPantallaActualSiEsSeguro();
+  }, 700);
+}
+// Usada tanto por la sincronización en vivo como por el refresco al volver
+// a la pestaña: refresca la pantalla actual, salvo que haya una ventana
+// abierta (para no interrumpir algo que se esté llenando).
+function refrescarPantallaActualSiEsSeguro(){
+  const bg = document.getElementById('modalBg');
+  if(bg && bg.classList.contains('show')) return;
+  if(currentModule && document.getElementById('appShell') && document.getElementById('appShell').style.display !== 'none'){
+    renderModule(currentModule);
+    calcularAlertas();
+  }
 }
 function toggleSidebar(){
   const sb_ = document.getElementById('sidebar');
@@ -2492,7 +2574,223 @@ function closeSidebar(){
   document.getElementById('hamburgerBtn').classList.remove('open');
   document.getElementById('sideOverlay').classList.remove('show');
 }
+/* ============================================================
+   CAMPANA DE ALERTAS
+   Revisa el estado de los datos (no reemplaza nada que ya exista, solo
+   los lee) y avisa de 5 cosas: cantidades negativas, lotes por caducar,
+   órdenes sin verificar hace días, stock en negativo, y producciones sin
+   completar. Al tocar una alerta, abre directamente el registro.
+   ============================================================ */
+let cacheAlertas = [];
+let alertasIdsVistos = new Set(); // para saber cuáles son "nuevas" y hacer temblar la campana solo con esas
+async function calcularAlertas(){
+  const hoy = todayISO();
+  const alertas = [];
+
+  // Para evitar pedir el Kardex dos veces, se trae una sola vez y se usa
+  // tanto para "stock negativo" como para "lotes por caducar".
+  const { data: lotes } = await sb.from('v_kardex_lotes_disponibles').select('*');
+  const nombreItem = (codigo)=>{ const it=(cacheItems||[]).find(i=>i.codigo===codigo); return it?it.nombre:codigo; };
+
+  // 1) Cantidades negativas o sospechosas (Cronograma + ingredientes)
+  const { data: cronoNeg } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area')
+    .or('cantidad_programada.lt.0,cantidad_real.lt.0');
+  (cronoNeg||[]).forEach(r=>{
+    alertas.push({
+      id:'neg-crono-'+r.id, tipo:'negativo', severidad:'alta',
+      titulo:'Cantidad negativa en producción',
+      detalle:`${nombreItem(r.item_codigo)} — Orden ${r.orden_produccion||''}`,
+      accion:{ modulo:'planificacion', cronogramaId:r.id, fecha:r.fecha, area:r.area }
+    });
+  });
+  const { data: ingNeg } = await sb.from('cronograma_ingredientes').select('id, cronograma_id, item_codigo, cantidad_consumida').lt('cantidad_consumida', 0);
+  if(ingNeg && ingNeg.length){
+    const ids = [...new Set(ingNeg.map(i=>i.cronograma_id))];
+    const { data: padres } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area').in('id', ids);
+    ingNeg.forEach(ci=>{
+      const padre = (padres||[]).find(p=>p.id===ci.cronograma_id);
+      if(!padre) return;
+      alertas.push({
+        id:'neg-ing-'+ci.id, tipo:'negativo', severidad:'alta',
+        titulo:'Consumo de ingrediente negativo',
+        detalle:`${nombreItem(ci.item_codigo)} en ${nombreItem(padre.item_codigo)} — Orden ${padre.orden_produccion||''}`,
+        accion:{ modulo:'planificacion', cronogramaId:padre.id, fecha:padre.fecha, area:padre.area }
+      });
+    });
+  }
+
+  // 2) Lotes por caducar pronto (7 días) o ya caducados
+  const limiteCad = entSumarDias(hoy, 7);
+  (lotes||[]).forEach(l=>{
+    if(Number(l.cantidad_disponible||0)<=0) return;
+    if(!l.fecha_caducidad || l.fecha_caducidad==='0000-00-00') return;
+    if(l.fecha_caducidad > limiteCad) return;
+    const vencido = l.fecha_caducidad < hoy;
+    alertas.push({
+      id:'cad-'+l.item_codigo+'-'+l.lote, tipo:'caducidad', severidad: vencido?'alta':'media',
+      titulo: vencido ? 'Lote caducado' : 'Lote por caducar',
+      detalle:`${nombreItem(l.item_codigo)} — lote ${l.lote} — ${vencido?'caducó el':'caduca el'} ${ddMMyy(l.fecha_caducidad)}`,
+      accion:{ modulo:'inventario', itemCodigo:l.item_codigo }
+    });
+  });
+
+  // 3) Órdenes de Cronograma sin verificar hace más de 3 días
+  const limiteViejo = entSumarDias(hoy, -3);
+  const { data: sinVerificar } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area, estado_verificacion')
+    .lt('fecha', limiteViejo).or('estado_verificacion.is.null,estado_verificacion.neq.aprobado');
+  (sinVerificar||[]).forEach(r=>{
+    alertas.push({
+      id:'sinver-'+r.id, tipo:'sin_verificar', severidad:'media',
+      titulo:'Orden sin verificar hace días',
+      detalle:`${nombreItem(r.item_codigo)} — Orden ${r.orden_produccion||''} — ${ddMMyy(r.fecha)}`,
+      accion:{ modulo:'monitoreo', cronogramaId:r.id, fecha:r.fecha, area:r.area }
+    });
+  });
+
+  // 4) Stock en negativo en el Kardex
+  (lotes||[]).forEach(l=>{
+    if(Number(l.cantidad_disponible||0)<0){
+      alertas.push({
+        id:'stockneg-'+l.item_codigo+'-'+l.lote, tipo:'stock_negativo', severidad:'alta',
+        titulo:'Stock en negativo',
+        detalle:`${nombreItem(l.item_codigo)} — lote ${l.lote} — ${fmtNum(l.cantidad_disponible)}`,
+        accion:{ modulo:'inventario', itemCodigo:l.item_codigo }
+      });
+    }
+  });
+
+  // 5) Producciones sin completar (cantidad real nunca ingresada, de un día ya pasado)
+  const { data: incompletas } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area, cantidad_real')
+    .lt('fecha', hoy).is('cantidad_real', null);
+  (incompletas||[]).forEach(r=>{
+    alertas.push({
+      id:'incompleta-'+r.id, tipo:'incompleta', severidad:'media',
+      titulo:'Producción sin completar',
+      detalle:`${nombreItem(r.item_codigo)} — Orden ${r.orden_produccion||''} — ${ddMMyy(r.fecha)} (nunca se puso cantidad real)`,
+      accion:{ modulo:'planificacion', cronogramaId:r.id, fecha:r.fecha, area:r.area }
+    });
+  });
+
+  // Las de más gravedad primero
+  alertas.sort((a,b)=> (a.severidad==='alta'?0:1) - (b.severidad==='alta'?0:1));
+  cacheAlertas = alertas;
+  renderCampanaAlertas();
+}
+function renderCampanaAlertas(){
+  const badge = document.getElementById('alertBadge');
+  const bell = document.getElementById('alertBell');
+  if(!badge || !bell) return;
+  const n = cacheAlertas.length;
+  badge.style.display = n ? 'flex' : 'none';
+  badge.textContent = n>99 ? '99+' : String(n);
+  const idsActuales = new Set(cacheAlertas.map(a=>a.id));
+  const hayNuevas = [...idsActuales].some(id=>!alertasIdsVistos.has(id));
+  if(hayNuevas && n>0){
+    bell.classList.remove('shake'); void bell.offsetWidth; bell.classList.add('shake');
+  }
+  alertasIdsVistos = idsActuales;
+  if(document.getElementById('alertDropdown').classList.contains('show')) renderAlertasDropdownBody();
+}
+function alertIcono(tipo){
+  return { negativo:'➖', caducidad:'⏳', sin_verificar:'🕐', stock_negativo:'📉', incompleta:'📋' }[tipo] || '⚠️';
+}
+function toggleAlertasDropdown(){
+  const dd = document.getElementById('alertDropdown');
+  const abrir = !dd.classList.contains('show');
+  dd.classList.toggle('show', abrir);
+  if(abrir) renderAlertasDropdownBody();
+}
+document.addEventListener('click', (e)=>{
+  const wrap = document.querySelector('.alert-bell-wrap');
+  const dd = document.getElementById('alertDropdown');
+  if(wrap && dd && dd.classList.contains('show') && !wrap.contains(e.target)) dd.classList.remove('show');
+});
+function renderAlertasDropdownBody(){
+  const dd = document.getElementById('alertDropdown');
+  if(!dd) return;
+  const top = cacheAlertas.slice(0, 8);
+  dd.innerHTML = `
+    <div class="alert-dropdown-head"><span>🔔 Alertas (${cacheAlertas.length})</span></div>
+    ${top.length ? top.map(a=>`
+      <div class="alert-item" onclick="irAAlerta('${a.id}')">
+        <span class="ai-dot ${a.severidad}"></span>
+        <div class="ai-body"><div class="ai-title">${alertIcono(a.tipo)} ${escHtml(a.titulo)}</div><div class="ai-detail">${escHtml(a.detalle)}</div></div>
+      </div>
+    `).join('') : '<div class="alert-empty">Sin alertas por ahora 🎉</div>'}
+    <div class="alert-dropdown-foot"><button class="btn" style="width:100%;" onclick="document.getElementById('alertDropdown').classList.remove('show'); goModule('alertas');">Ver completo</button></div>
+  `;
+}
+function renderAlertasPage(){
+  const app = document.getElementById('app');
+  const grupos = {};
+  cacheAlertas.forEach(a=>{ (grupos[a.tipo] = grupos[a.tipo]||[]).push(a); });
+  const titulos = { negativo:'Cantidades negativas o sospechosas', caducidad:'Lotes por caducar o caducados', sin_verificar:'Órdenes sin verificar hace días', stock_negativo:'Stock en negativo', incompleta:'Producciones sin completar' };
+  app.innerHTML = `
+    <div class="card" style="--accent:var(--danger)">
+      <h2>🔔 Alertas</h2>
+      <div class="sub">Revisión automática de datos del sistema — ${cacheAlertas.length} en total. Toca cualquiera para ir directo a corregirla.</div>
+      <button class="btn" style="margin-top:10px;" onclick="calcularAlertas().then(renderAlertasPage)">↻ Volver a revisar ahora</button>
+    </div>
+    ${Object.keys(grupos).length ? Object.entries(grupos).map(([tipo, lista])=>`
+      <div class="card">
+        <h3 style="margin-top:0;">${alertIcono(tipo)} ${titulos[tipo]||tipo} <span class="sub">(${lista.length})</span></h3>
+        <div class="reg-list">
+          ${lista.map(a=>`
+            <div class="reg-row" style="cursor:pointer;" onclick="irAAlerta('${a.id}')">
+              <div class="rmain"><span class="sup">${a.severidad==='alta'?'🔴 Urgente':'🟠 Revisar'}</span><span class="big">${escHtml(a.titulo)}</span><span class="sub">${escHtml(a.detalle)}</span></div>
+              <div class="rval"><span class="sub">Ir ›</span></div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `).join('') : '<div class="card"><div class="empty-state">Sin alertas por ahora 🎉</div></div>'}
+  `;
+}
+async function irAAlerta(alertaId){
+  const a = cacheAlertas.find(x=>x.id===alertaId);
+  if(!a) return;
+  document.getElementById('alertDropdown').classList.remove('show');
+  const acc = a.accion;
+  if(acc.modulo === 'planificacion'){
+    currentModule = 'planificacion';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='planificacion'));
+    closeSidebar();
+    await renderPlanificacion(); // esto deja la fecha en "hoy" — se corrige después
+    planFechaActual = acc.fecha;
+    PlanState.tab = 'cronograma';
+    setActiveTab('cronograma');
+    await planLoad(true);
+    renderCronogramaTab();
+    openCronogramaForm(acc.cronogramaId);
+  } else if(acc.modulo === 'monitoreo'){
+    currentModule = 'monitoreo';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='monitoreo'));
+    closeSidebar();
+    await renderMonitoreo(); // deja todo listo en 'hoy'
+    planFechaActual = acc.fecha;
+    MonState.tab = 'produccion';
+    setActiveTab('produccion');
+    await monLoad(true);
+    await monAbrirProducto(acc.cronogramaId);
+  } else if(acc.modulo === 'inventario'){
+    currentModule = 'inventario';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='inventario'));
+    closeSidebar();
+    await renderInventario();
+    await invLoad(true);
+    openKardexHistory(acc.itemCodigo);
+  }
+  window.scrollTo({top:0,behavior:'instant'});
+}
 function goModule(mod){
+  if(mod === 'alertas'){
+    currentModule = 'alertas';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.remove('active'));
+    closeSidebar();
+    renderAlertasPage();
+    window.scrollTo({top:0,behavior:'instant'});
+    return;
+  }
   const permiso = permisoActual();
   if(permiso && (permiso.enConstruccion || !permiso.modulos.includes(mod))) return; // el área actual no tiene acceso a este módulo
   currentModule = mod;
@@ -2526,6 +2824,24 @@ function renderModule(mod){
     </div>
   `;
 }
+// Vuelve a cargar la pantalla actual cuando el usuario regresa a la pestaña
+// o a la aplicación (por ejemplo, después de cambiar de app en el celular o
+// de minimizar la ventana) — sirve de respaldo a la sincronización en vivo,
+// por si el celular suspendió la conexión mientras estaba en segundo plano
+// (algo común en Android/iOS). No se hace nada si hay una ventana abierta,
+// ni si el cambio fue muy breve (un parpadeo, no un verdadero "volví a la app").
+let momentoOculto = null;
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'hidden'){
+    momentoOculto = Date.now();
+    return;
+  }
+  if(!momentoOculto) return;
+  const estuvoOcultoMs = Date.now() - momentoOculto;
+  momentoOculto = null;
+  if(estuvoOcultoMs < 8000) return; // parpadeo breve, no hace falta refrescar
+  refrescarPantallaActualSiEsSeguro();
+});
 
 /* ============================================================
    MODAL GENÉRICO
@@ -2617,6 +2933,25 @@ function closeModalAll(){
 document.getElementById('modalBg').addEventListener('click', e=>{
   if(e.target.id === 'modalBg') closeModal();
 });
+// Protección general contra doble clic, para TODA la app: cualquier botón
+// principal (Guardar, Confirmar, Agregar, etc. — los que llevan clase
+// "btn primary") ignora un segundo toque si llega antes de 900ms del
+// primero, sin tener que revisar función por función. Los botones ya tienen
+// su propio seguro (como "crConfirmAddBtn") siguen funcionando igual, este
+// es una capa extra por si algún otro se quedó sin el suyo.
+const ultimoClickBoton = new WeakMap();
+document.addEventListener('click', function(e){
+  const btn = e.target.closest('button.btn.primary');
+  if(!btn || btn.disabled) return;
+  const ahora = Date.now();
+  const anterior = ultimoClickBoton.get(btn) || 0;
+  if(ahora - anterior < 900){
+    e.stopImmediatePropagation();
+    e.preventDefault();
+    return;
+  }
+  ultimoClickBoton.set(btn, ahora);
+}, true);
 function setActiveTab(activeVal){
   document.querySelectorAll('.tabbar .tabbtn').forEach(b=>{
     b.classList.toggle('active', b.dataset.tab===activeVal);
@@ -2690,7 +3025,7 @@ async function renderInventario(){
   const soloKardex = !!(permisoActual() && permisoActual().soloKardex);
   if(soloKardex){
     InvState.tab = 'kardex';
-    app.innerHTML = `<div id="invBody"><div class="empty-state">Cargando…</div></div>`;
+    app.innerHTML = `<div id="invBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>`;
     await invLoad(false);
     invRenderBody();
     return;
@@ -2702,7 +3037,7 @@ async function renderInventario(){
       <button class="tabbtn ${InvState.tab==='formulacion'?'active':''}" data-tab="formulacion" onclick="invGoTab('formulacion')">Formulación</button>
       <button class="tabbtn ${InvState.tab==='ajustes'?'active':''}" data-tab="ajustes" onclick="invGoTab('ajustes')">Ajustes</button>
     </div>
-    <div id="invBody"><div class="empty-state">Cargando…</div></div>
+    <div id="invBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await invLoad(false);
   invRenderBody();
@@ -2775,7 +3110,7 @@ async function openKardexHistory(codigo){
       <button class="tabbtn ${KxHistState.tab==='movimientos'?'active':''}" data-tab="movimientos" onclick="kxHistGoTab('${escHtml(codigo)}', 'movimientos')">Movimientos</button>
       <button class="tabbtn ${KxHistState.tab==='lotes'?'active':''}" data-tab="lotes" onclick="kxHistGoTab('${escHtml(codigo)}', 'lotes')">Lotes</button>
     </div>
-    <div id="kxHistBody"><div class="empty-state">Cargando…</div></div>
+    <div id="kxHistBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `);
   kxHistRenderBody(codigo, item);
 }
@@ -2789,10 +3124,10 @@ function kxHistRenderBody(codigo, item){
   const body = document.getElementById('kxHistBody');
   if(!body) return;
   if(KxHistState.tab === 'lotes'){
-    body.innerHTML = `<div class="reg-list" id="kxLotesActuales"><div class="empty-state">Cargando lotes…</div></div>`;
+    body.innerHTML = `<div class="reg-list" id="kxLotesActuales"><div class="loading-state"><span class="spinner"></span>Cargando lotes…</div></div>`;
     kxRenderLotesActuales(codigo, item);
   } else {
-    body.innerHTML = `<div class="msub">Historial de movimientos (Kardex)</div><div id="kxHist"><div class="empty-state">Cargando…</div></div>`;
+    body.innerHTML = `<div class="msub">Historial de movimientos (Kardex)</div><div id="kxHist"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>`;
     kxRenderMovimientos(codigo, item);
   }
 }
@@ -3191,6 +3526,16 @@ function openItemForm(codigo){
       <label class="switch"><input type="checkbox" id="fRequiereLote" ${!item || item.requiere_lote!==false?'checked':''}><span class="slider"></span></label>
     </div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Si lo apagas, este ítem usará siempre el lote fijo "N/A" en Kardex, Planificación, Bodega y Despacho — útil para ítems que no se controlan por lote.</div>
+    <div class="toggle-row">
+      <span>Es caja/cartón de Sellado</span>
+      <label class="switch"><input type="checkbox" id="fEsCajaSellado" ${item && item.es_caja_sellado?'checked':''}><span class="slider"></span></label>
+    </div>
+    <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Actívalo si este material de empaque es una caja o cartón que se consume en Sellado — aparecerá en la lista para agregar cajas extra.</div>
+    <div class="toggle-row">
+      <span>Material extra de Cronograma (sin etiquetado)</span>
+      <label class="switch"><input type="checkbox" id="fEsExtraCronograma" ${item && item.es_extra_cronograma?'checked':''}><span class="slider"></span></label>
+    </div>
+    <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Actívalo si este material de empaque se consume directo en Cronograma junto con la Materia Prima, sin pasar por Etiquetado.</div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--personal)" onclick="saveItemForm(${editing?`'${escHtml(codigo)}'`:'null'})">Guardar</button>
@@ -3212,13 +3557,16 @@ async function saveItemForm(codigoEdit){
   const presCant = parseFloat((document.getElementById('fPresCant').value||'1').replace(',','.')) || 1;
   const presMedida = document.getElementById('fPresMedida').value;
   const requiereLote = document.getElementById('fRequiereLote').checked;
+  const esCajaSellado = document.getElementById('fEsCajaSellado').checked;
+  const esExtraCronograma = document.getElementById('fEsExtraCronograma').checked;
   if(!nombre){ toast('Ingresa el nombre del ítem'); return; }
 
   if(codigoEdit){
     const activo = document.getElementById('fActivo').checked;
     const { error } = await sb.from('items').update({
       nombre, medida, presentacion_cantidad: presCant, presentacion_medida: presMedida,
-      activo, requiere_lote: requiereLote, updated_at: new Date().toISOString()
+      activo, requiere_lote: requiereLote, es_caja_sellado: esCajaSellado, es_extra_cronograma: esExtraCronograma,
+      updated_at: new Date().toISOString()
     }).eq('codigo', codigoEdit);
     if(error){ toast('Error: ' + error.message); return; }
     toast('Ítem actualizado');
@@ -3226,7 +3574,8 @@ async function saveItemForm(codigoEdit){
     const tipo = document.getElementById('fTipo').value;
     const codigo = nextItemCode(tipo);
     const { error } = await sb.from('items').insert({
-      codigo, nombre, medida, tipo, presentacion_cantidad: presCant, presentacion_medida: presMedida, requiere_lote: requiereLote
+      codigo, nombre, medida, tipo, presentacion_cantidad: presCant, presentacion_medida: presMedida,
+      requiere_lote: requiereLote, es_caja_sellado: esCajaSellado, es_extra_cronograma: esExtraCronograma
     });
     if(error){ toast('Error: ' + error.message); return; }
     toast('Ítem agregado: ' + codigo);
@@ -3664,7 +4013,7 @@ async function renderPlanificacion(){
       <button class="tabbtn ${PlanState.tab==='paradas'?'active':''}" data-tab="paradas" onclick="planGoTab('paradas')">Paradas</button>
       <button class="tabbtn ${PlanState.tab==='registros'?'active':''}" data-tab="registros" onclick="planGoTab('registros')">Registros</button>
     </div>
-    <div id="planBody"><div class="empty-state">Cargando…</div></div>
+    <div id="planBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await planLoad(false);
   planRenderBody();
@@ -3789,11 +4138,6 @@ function crPickProduct(codigo){
 // y se corrigen solas a la cantidad real cuando Monitoreo aprueba la orden —
 // porque usan el mismo comprobante ('PRODUCCION N° <orden>'), kardexEscribirProduccion
 // reemplaza esa misma entrada en vez de duplicarla.
-const DISCOS_NOMBRES = [
-  'DISCO DE PIZZA MEDIANO 19.5',
-  'DISCO DE PIZZA GRANDE 30.0',
-  'DISCO PIZZA PEQUEÑO 16.5'
-].map(normalizaNombre);
 // Se descuenta/ingresa al Kardex desde que se CREA la orden (no se espera a
 // que Monitoreo la apruebe): entra con la cantidad teórica (programada), y
 // se corrige sola —no se duplica— cuando cambia la cantidad programada antes
@@ -3835,13 +4179,35 @@ async function kardexEscribirProduccionTeorica(row){
 // Cada producto se crea de forma totalmente independiente: su propia orden,
 // sus propios ingredientes (según la fórmula) y su propia entrada teórica en
 // Kardex. No hay ningún cálculo, suma ni vínculo automático con otras
+// Intenta guardar algo con un número que se calcula como "el siguiente
+// disponible" (OP, código de sellado, N° de despacho). Si otro dispositivo
+// acaba de tomar ese mismo número un instante antes, la base de datos
+// rechaza el guardado (gracias a la restricción única) en vez de aceptar un
+// duplicado — y aquí se vuelve a intentar solo, calculando el siguiente de
+// nuevo, sin que el usuario note nada.
+async function insertarConSecuenciaUnica(generarSiguiente, insertar, maxIntentos){
+  let intentos = 0;
+  let ultimoError = null;
+  while(intentos < (maxIntentos||4)){
+    const numero = await generarSiguiente();
+    const { data, error } = await insertar(numero);
+    if(!error) return { data, error: null, numero };
+    const esDuplicado = error.code === '23505' || /duplicate key|unique constraint/i.test(error.message||'');
+    if(!esDuplicado) return { data: null, error };
+    ultimoError = error;
+    intentos++;
+  }
+  return { data: null, error: ultimoError || { message: 'No se pudo generar un número único después de varios intentos' } };
+}
 // órdenes — cada una se ingresa por separado, como cualquier otra.
 async function crCrearOrdenConIngredientes(itemCodigo, cantidad, fecha, area){
-  const op = await nextOP();
-  const { data, error } = await sb.from('cronograma').insert({
-    fecha, area, item_codigo: itemCodigo, cantidad_programada: cantidad,
-    orden_produccion: op, estado:'pendiente', lote: ddMMyy(fecha)
-  }).select().single();
+  const { data, error } = await insertarConSecuenciaUnica(
+    nextOP,
+    (op)=>sb.from('cronograma').insert({
+      fecha, area, item_codigo: itemCodigo, cantidad_programada: cantidad,
+      orden_produccion: op, estado:'pendiente', lote: ddMMyy(fecha)
+    }).select().single()
+  );
   if(error){ toast('Error: ' + error.message); return null; }
   const ingredientesFormula = (cacheFormulacion||[]).filter(f=>{
     if(f.cod_producto_principal!==itemCodigo) return false;
@@ -3880,10 +4246,19 @@ async function crConfirmAdd(codigo){
     if(btn){ btn.disabled = false; btn.textContent = 'Agregar'; }
   }
 }
-// Elimina UNA orden y todo lo que le pertenece en Kardex (producción propia +
-// consumo de sus ingredientes) — sin tocar a sus hijas ni a su padre.
+// Elimina UNA orden y todo lo que le pertenece: su producción y el consumo
+// de sus ingredientes en Kardex, y las filas que cuelgan de ella en otras
+// tablas (ingredientes elegidos, personal registrado, paradas) — para no
+// dejar nada suelto apuntando a una orden que ya no existe, sin depender de
+// que la base de datos tenga el borrado en cascada configurado. Se puede
+// llamar desde cualquier pantalla: si la orden no está en caché, la busca
+// directo en la base para tener sus datos completos.
 async function crEliminarOrdenYSuKardex(id){
-  const row = (cacheCronograma||[]).find(c=>c.id===id);
+  let row = (cacheCronograma||[]).find(c=>c.id===id);
+  if(!row){
+    const { data } = await sb.from('cronograma').select('*, cronograma_ingredientes(*)').eq('id', id).single();
+    row = data;
+  }
   if(row && row.orden_produccion){
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'PRODUCCION N° ' + row.orden_produccion);
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + row.orden_produccion);
@@ -3893,6 +4268,11 @@ async function crEliminarOrdenYSuKardex(id){
       await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(row.orden_produccion, ci.item_codigo, ci.id));
     }
   }
+  await Promise.all([
+    sb.from('cronograma_ingredientes').delete().eq('cronograma_id', id),
+    sb.from('cronograma_personal').delete().eq('cronograma_id', id),
+    sb.from('paradas').delete().eq('cronograma_id', id)
+  ]);
   await sb.from('cronograma').delete().eq('id', id);
 }
 async function deleteCronogramaRow(id){
@@ -4569,7 +4949,7 @@ function openCronogramaFormNormal(id){
     </div>
 
     <div class="section-title">Paradas de esta orden</div>
-    <div id="pfParadasBody"><div class="empty-state">Cargando…</div></div>
+    <div id="pfParadasBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
 
     <div class="field">
       <label>Observaciones</label>
@@ -5025,7 +5405,7 @@ async function openLotePicker(cronogramaIngId){
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(ci.item_codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(item?item.nombre:ci.item_codigo)}</h3>
     <div class="msub">Selecciona el o los lotes a consumir</div>
-    <div id="loteList"><div class="empty-state">Cargando…</div></div>
+    <div id="loteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="lote-remain" id="loteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -5170,7 +5550,7 @@ function renderRegistrosTab(){
       <button class="btn" style="width:100%;" onclick="regExportExcel()">⬇ Descargar Excel</button>
     </div>
     <div class="list-meta" id="regMeta">Cargando…</div>
-    <div class="reg-list" id="regList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="regList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('regSearch').addEventListener('input', e=>{ RegState.q = e.target.value; renderRegistrosList(); });
   document.getElementById('regDesde').addEventListener('change', e=>{ RegState.desde = e.target.value; regReload(); });
@@ -5265,13 +5645,7 @@ async function openRegistroDetalle(id){
 }
 async function deleteRegistroRow(id){
   if(!confirm('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
-  const row = (RegState.rows||[]).find(c=>c.id===id);
-  if(row && row.orden_produccion){
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'PRODUCCION N° ' + row.orden_produccion);
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + row.orden_produccion);
-  }
-  const { error } = await sb.from('cronograma').delete().eq('id', id);
-  if(error){ toast('Error: '+error.message); return; }
+  await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   closeModal();
   await Promise.all([regReload(), invLoad(true)]);
@@ -5279,13 +5653,7 @@ async function deleteRegistroRow(id){
 }
 async function deleteRegistroRowFromList(id){
   if(!confirm('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
-  const row = (RegState.rows||[]).find(c=>c.id===id);
-  if(row && row.orden_produccion){
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'PRODUCCION N° ' + row.orden_produccion);
-    await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + row.orden_produccion);
-  }
-  const { error } = await sb.from('cronograma').delete().eq('id', id);
-  if(error){ toast('Error: '+error.message); return; }
+  await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   await Promise.all([regReload(), invLoad(true)]);
   toast('Registro eliminado, junto con su información de Kardex');
@@ -5309,7 +5677,7 @@ function renderParadasTab(){
       <input type="text" id="pdProductoFiltro" placeholder="Filtrar por código o nombre…" value="${escHtml(ParadasRegState.producto)}">
     </div>
     <div class="list-meta" id="pdMeta">Cargando…</div>
-    <div class="reg-list" id="pdList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="pdList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('pdDesde').addEventListener('change', e=>{ ParadasRegState.desde=e.target.value; paradasRegReload(); });
   document.getElementById('pdHasta').addEventListener('change', e=>{ ParadasRegState.hasta=e.target.value; paradasRegReload(); });
@@ -5368,7 +5736,7 @@ async function renderEtiquetado(){
       <button class="tabbtn ${EtiqState.tab==='actividad'?'active':''}" data-tab="actividad" onclick="etiqGoTab('actividad')">Actividad</button>
       <button class="tabbtn ${EtiqState.tab==='registros'?'active':''}" data-tab="registros" onclick="etiqGoTab('registros')">Registros</button>
     </div>
-    <div id="etiqRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="etiqRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await etiqLoad(false);
   etiqRenderBody();
@@ -5443,7 +5811,7 @@ function productoTieneFundas(itemCodigo){
   return (cacheFormulacion||[]).some(f=>{
     if(f.cod_producto_principal!==itemCodigo) return false;
     const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, ETIQ_FUNDAS_NOMBRES);
+    return esFundaEtiquetado(compItem);
   });
 }
 function etiqRenderOrdenList(){
@@ -5478,7 +5846,7 @@ async function etiqAbrirModal(cronogramaId){
   if(!row) return;
   const componentesME = (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===row.item_codigo).map(f=>{
     const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    return (compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, ETIQ_FUNDAS_NOMBRES)) ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
+    return esFundaEtiquetado(compItem) ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
   }).filter(Boolean);
   if(!componentesME.length){ toast('Este producto no tiene material de empaque definido en su fórmula (Formulación → Ítems)'); return; }
   EtiqModalState = {
@@ -5598,7 +5966,7 @@ function etiqBuscarMeExtra(q){
   if(!results) return;
   if(!q){ results.innerHTML=''; return; }
   const yaAgregados = new Set(EtiqModalState.rows.map(r=>r.item_codigo));
-  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(i, ETIQ_FUNDAS_NOMBRES) && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  const matches = (cacheItems||[]).filter(i=>i.activo && esFundaEtiquetado(i) && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
   results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="etiqAgregarMeExtra('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
 function etiqAgregarMeExtra(codigo){
@@ -5623,7 +5991,7 @@ async function etiqAbrirLotePicker(idx){
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(r.item_codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(r.item_nombre)}</h3>
     <div class="msub">Selecciona el o los lotes a consumir</div>
-    <div id="etiqLoteList"><div class="empty-state">Cargando…</div></div>
+    <div id="etiqLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="lote-remain" id="etiqLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -6118,7 +6486,7 @@ async function despAbrirLotePickerItem(idx){
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(f.it.item_codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(f.it.item_nombre)}</h3>
     <div class="msub">Selecciona el o los lotes a despachar (en cajas)</div>
-    <div id="despLoteList"><div class="empty-state">Cargando…</div></div>
+    <div id="despLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="lote-remain" id="despLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -6492,7 +6860,7 @@ async function renderEntregas(){
       <button class="tabbtn ${EntState.tab==='calendario'?'active':''}" data-tab="calendario" onclick="entGoTab('calendario')">Calendario</button>
       <button class="tabbtn ${EntState.tab==='registros'?'active':''}" data-tab="registros" onclick="entGoTab('registros')">Registros</button>
     </div>
-    <div id="entRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="entRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   const tasks = [entLoad()];
   if(!cacheItems || !cacheMedidas) tasks.push(invLoad(true));
@@ -7163,7 +7531,6 @@ async function entEliminar(id){
   toast('Entrega eliminada');
 }
 
-/* ============================================================
 async function renderCalidad(){
   const app = document.getElementById('app');
   app.innerHTML = `
@@ -7171,7 +7538,7 @@ async function renderCalidad(){
       <button class="tabbtn ${CalState.tab==='bajasmermas'?'active':''}" data-tab="bajasmermas" onclick="calGoTab('bajasmermas')">Desperdicios</button>
       <button class="tabbtn ${CalState.tab==='cuarentena'?'active':''}" data-tab="cuarentena" onclick="calGoTab('cuarentena')">Cuarentena</button>
     </div>
-    <div id="calRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="calRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   const tasks = [];
   if(!cacheItems) tasks.push(invLoad(true));
@@ -7279,7 +7646,7 @@ async function renderCalCuarentenaTab(){
       <button class="tabbtn ${CalCuarState.sub==='registros'?'active':''}" onclick="calCuarGoSub('registros')">Registros</button>
     </div>
     <div class="list-meta" id="calCuarMeta"></div>
-    <div class="reg-list" id="calCuarList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="calCuarList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await calCuarLoad();
 }
@@ -7452,7 +7819,7 @@ async function renderMonitoreo(){
       <button class="tabbtn ${MonState.tab==='produccion'?'active':''}" data-tab="produccion" onclick="monGoTab('produccion')">Producción Operativa</button>
       <button class="tabbtn ${MonState.tab==='registros'?'active':''}" data-tab="registros" onclick="monGoTab('registros')">Registros</button>
     </div>
-    <div id="monBody"><div class="empty-state">Cargando…</div></div>
+    <div id="monBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await monLoad(false);
   await monRenderBody();
@@ -8001,7 +8368,7 @@ async function renderMonRegistrosTab(){
       <button class="btn" style="width:100%;" onclick="exportarExcelRegistroFiltrado()">⬇ Excel (filtrado)</button>
     </div>
     <div class="list-meta" id="mregMeta">Cargando…</div>
-    <div class="reg-list" id="mregList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="mregList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('mregSearch').addEventListener('input', e=>{ MonRegState.q = e.target.value; renderMonRegistrosList(); });
   document.getElementById('mregDesde').addEventListener('change', e=>{ MonRegState.desde = e.target.value; monRegReload(); });
@@ -8103,10 +8470,8 @@ async function monRegDeleteFromList(id){
   const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
   if(bloqueo){ alert(bloqueo); return; }
   if(!confirm('¿Eliminar este registro permanentemente? También se eliminará de Cronograma/Registros de Planificación y se revertirá su Kardex. Esta acción no se puede deshacer.')) return;
-  const cr = reg.cronograma_id ? { id: reg.cronograma_id, orden_produccion: reg.orden_produccion } : null;
-  if(cr) await kardexRevertirProduccion(cr);
   await sb.from('registro_produccion').delete().eq('id', id);
-  if(reg.cronograma_id) await sb.from('cronograma').delete().eq('id', reg.cronograma_id); // arrastra en cascada ingredientes/personal/paradas
+  if(reg.cronograma_id) await crEliminarOrdenYSuKardex(reg.cronograma_id); // también borra ingredientes/personal/paradas de esa orden, no deja nada suelto
   cacheRegistroTodo = null;
   await Promise.all([monLoad(true), invLoad(true)]);
   toast('Registro eliminado de todas las páginas relacionadas');
@@ -8414,7 +8779,7 @@ async function renderIndicadores(){
       <button class="tabbtn ${IndState.tab==='sellado'?'active':''}" data-tab="sellado" onclick="indGoTab('sellado')">Sellado</button>
       <button class="tabbtn ${IndState.tab==='entregas'?'active':''}" data-tab="entregas" onclick="indGoTab('entregas')">Entregas</button>
     </div>
-    <div id="indRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="indRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   indRenderBody();
 }
@@ -8447,7 +8812,7 @@ function indFmtPct(v){ return v==null ? '—' : Math.round(v*100); }
 /* ---------------- Producción ---------------- */
 async function indRenderProduccion(){
   const root = document.getElementById('indRoot');
-  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const [{ data: registros }, { data: paradas }] = await Promise.all([
     sb.from('registro_produccion').select('*').eq('locked', true).gte('fecha', desde).lte('fecha', hasta),
@@ -8529,7 +8894,7 @@ async function indRenderProduccion(){
 /* ---------------- Sellado ---------------- */
 async function indRenderSellado(){
   const root = document.getElementById('indRoot');
-  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const { data: filas } = await sb.from('sellado_registros').select('tipo_actividad, nombre_actividad, items').gte('fecha', desde).lte('fecha', hasta);
   const items = [];
@@ -8595,7 +8960,7 @@ async function indRenderSellado(){
 /* ---------------- Entregas ---------------- */
 async function indRenderEntregasTab(){
   const root = document.getElementById('indRoot');
-  root.innerHTML = '<div class="empty-state">Cargando…</div>';
+  root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const [{ data: entregas }, { data: despachos }] = await Promise.all([
     sb.from('entregas').select('*').gte('fecha', desde).lte('fecha', hasta),
@@ -8671,7 +9036,7 @@ async function indRenderEntregasTab(){
    ============================================================ */
 async function renderConfiguracion(){
   const app = document.getElementById('app');
-  app.innerHTML = '<div class="empty-state">Cargando…</div>';
+  app.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   await monLoad(false);
   await bodLoad(false);
   await despLoad(false);
@@ -9165,6 +9530,18 @@ function nombreEnLista(item, lista){
   const n = normalizaNombre(item.nombre);
   return lista.includes(n);
 }
+// Además de la lista exacta de fundas, cualquier material de empaque cuyo
+// nombre empiece con "FUNDA" o "FUNDAS" también se reconoce en Etiquetado —
+// así una funda de un sabor nuevo (ej. "Funda Lasaña Pollo") no se queda sin
+// aparecer solo porque su nombre exacto no está escrito en la lista.
+function esFundaEtiquetado(item){
+  if(!item || item.tipo!=='MATERIAL_EMPAQUE') return false;
+  const n = normalizaNombre(item.nombre);
+  return lista_esFunda(n) || ETIQ_FUNDAS_NOMBRES.includes(n);
+}
+function lista_esFunda(nombreNormalizado){
+  return /^FUNDAS?\b/.test(nombreNormalizado);
+}
 // Fundas: aparecen en Etiquetado cuando están en la fórmula del producto.
 const ETIQ_FUNDAS_NOMBRES = [
   'FUNDA STANP UP ZIPPER TRANSP 1000 ML',
@@ -9172,6 +9549,8 @@ const ETIQ_FUNDAS_NOMBRES = [
   'ETIQUETA PARA CHURROS',
   'FUNDAS LASAÑA BOLOÑESA 300G',
   'FUNDA LASAÑA POLLO',
+  'FUNDAS LASAÑA POLLO',
+  'FUNDAS LASAÑA POLLO 300G',
   'FUNDAS PIZZA CONGELADA DE CARNICERA BOPP MATE 33X35cm X50MICRAS',
   'FUNDAS PIZZA CONGELADA DE JAMON Y QUESO BOPP MATE PP 33X35CM X50MICRAS',
   'FUNDAS PIZZA CONGELADA DE PEPPERONI BOPP MATE 33X35cm X50MICRAS',
@@ -9182,24 +9561,6 @@ const ETIQ_FUNDAS_NOMBRES = [
   'FUNDAS MINI PIZZA DE PEPPERONI REFR',
   'FUNDAS MINI PIZZA CONGELADA DE PEPPERONI BOPP MATE PP 24X24CM X50 MICRAS',
   'CAJAS PARA STICKS'
-].map(normalizaNombre);
-// Cajas: aparecen en Sellado (cartones/cajas usados) cuando están en la fórmula.
-const SEL_CAJAS_PERMITIDAS = [
-  'CAJAS KRAFT PEQUEÑA (404-284-204)',
-  'CAJAS PARA STICKS',
-  'CAJA KRAFT GRANDE - (665-326-185)',
-  'CAJAS PEQUEÑAS KRAFT LA ORIGINAL',
-  'CAJAS KRAFT MED - (430-285-215)'
-].map(normalizaNombre);
-// Material de empaque que NO requiere etiquetado, pero sí debe poder
-// consumirse directo en Cronograma junto con la Materia Prima.
-const CRONOGRAMA_ME_EXTRA_NOMBRES = [
-  'FUNDAS BD 7X5X0.0025 STICKS',
-  'FUNDAS PIZZAS CONGELADAS VACIO BD 12.75X13.75X0.004 NAT',
-  'ENVASE ALUM C10',
-  'TAPA ENVASE ALUM C10',
-  'COPA SOUFFLE 2 OZ NEGRO',
-  'TAPA SOUFFLE 1.5 OZ'
 ].map(normalizaNombre);
 // La "Materia Prima" no siempre tiene la misma abreviatura interna (depende de
 // cómo esté configurada en Configuración → Tipos), así que en vez de comparar
@@ -9217,7 +9578,7 @@ function productoTieneFormulaPropia(itemCodigo){
 function esIngredienteDeCronograma(item){
   if(!item) return false;
   if(esTipoMateriaPrima(item)) return true;
-  if(nombreEnLista(item, CRONOGRAMA_ME_EXTRA_NOMBRES)) return true;
+  if(item.es_extra_cronograma) return true;
   // Un producto que a su vez tiene su propia fórmula (ej. la masa dentro de
   // los discos, o la bechamel/boloñesa dentro de la lasaña) también cuenta
   // como ingrediente — se produce en su propia orden (independiente, con su
@@ -9228,7 +9589,7 @@ function selEsProductoSellable(item){
   if(!item) return false;
   if(item.tipo === 'PRODUCTO_VENTA') return true;
   if(item.tipo === 'MATERIAL_EMPAQUE'){
-    return nombreEnLista(item, SEL_CAJAS_PERMITIDAS);
+    return !!item.es_caja_sellado;
   }
   return false;
 }
@@ -9286,7 +9647,7 @@ function productoTieneCajas(itemCodigo){
   return (cacheFormulacion||[]).some(f=>{
     if(f.cod_producto_principal!==itemCodigo) return false;
     const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(compItem, SEL_CAJAS_PERMITIDAS);
+    return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && !!compItem.es_caja_sellado;
   });
 }
 async function selCargarPendientesSellado(){
@@ -9350,7 +9711,7 @@ async function renderSellado(){
       <button class="tabbtn ${SelTabState.tab==='ajuste'?'active':''}" data-tab="ajuste" onclick="selGoTab('ajuste')">Ajuste</button>
       <button class="tabbtn ${SelTabState.tab==='registros'?'active':''}" data-tab="registros" onclick="selGoTab('registros')">Registros</button>
     </div>
-    <div id="selRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="selRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await selLoad(false);
   selRenderRootBody();
@@ -9365,7 +9726,7 @@ async function selRenderControlDespacho(){
         <input type="text" id="selDespSearch" placeholder="Buscar por cliente, N° de OC o producto…" oninput="selDespFiltrar(this.value)">
       </div>
     </div>
-    <div class="reg-list" id="selDespLista"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="selDespLista"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   if(!cacheCodigosCliente) await entLoadCodigosCliente();
   SelDespSemana = await despEntListaPendientes();
@@ -9382,7 +9743,7 @@ function selRenderRootBody(){
 async function renderSelladoAjusteTab(){
   const root = document.getElementById('selRoot');
   if(!root) return;
-  root.innerHTML = `<div id="selBody"><div class="empty-state">Cargando…</div></div>`;
+  root.innerHTML = `<div id="selBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>`;
   const row = await selEnsureSesion('REETRABAJO');
   if(!row) return;
   SelladoState.activa = 'REETRABAJO';
@@ -9508,10 +9869,12 @@ async function selEnsureSesion(tipo){
   let row = SelladoState.sesiones[tipo];
   if(!row){
     const meta = SELLADO_ACTIVIDADES.find(a=>a.key===tipo);
-    const codigo = await nextSelladoCode(meta.prefijo);
-    const { data, error } = await sb.from('sellado_registros').insert({
-      fecha: SelladoState.fecha, tipo_actividad: tipo, nombre_actividad: meta.nombre, codigo_actividad: codigo, estado:'abierto', items: []
-    }).select().single();
+    const { data, error } = await insertarConSecuenciaUnica(
+      ()=>nextSelladoCode(meta.prefijo),
+      (codigo)=>sb.from('sellado_registros').insert({
+        fecha: SelladoState.fecha, tipo_actividad: tipo, nombre_actividad: meta.nombre, codigo_actividad: codigo, estado:'abierto', items: []
+      }).select().single()
+    );
     if(error){ toast('Error: '+error.message); return null; }
     row = data;
     SelladoState.sesiones[tipo] = row;
@@ -10402,7 +10765,7 @@ function cajasDeFormula(itemCodigoProducto, cantidadReferencia){
   const filaFicticia = { item_codigo: itemCodigoProducto, cantidad_real: cantidadReferencia, cantidad_programada: cantidadReferencia };
   return (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===itemCodigoProducto).map(f=>{
     const compItem = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
-    if(!compItem || compItem.tipo!=='MATERIAL_EMPAQUE' || !nombreEnLista(compItem, SEL_CAJAS_PERMITIDAS)) return null;
+    if(!compItem || compItem.tipo!=='MATERIAL_EMPAQUE' || !compItem.es_caja_sellado) return null;
     const teorica = pfCantidadTeorica(filaFicticia, f.cod_componente);
     return { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida, teorica, cantidad:null, lotes_consumidos:[] };
   }).filter(Boolean);
@@ -10545,7 +10908,7 @@ function selBuscarCarton(q){
   if(!results) return;
   if(!q){ results.innerHTML=''; return; }
   const yaAgregados = new Set(SelCartonState.cartones.map(c=>c.item_codigo));
-  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && nombreEnLista(i, SEL_CAJAS_PERMITIDAS) && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
+  const matches = (cacheItems||[]).filter(i=>i.activo && i.tipo==='MATERIAL_EMPAQUE' && i.es_caja_sellado && !yaAgregados.has(i.codigo) && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
   results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="selAgregarCartonExtra('${escHtml(m.codigo)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
 function selAgregarCartonExtra(codigo){
@@ -10570,7 +10933,7 @@ async function selAbrirLotePickerCarton(idx){
     <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(c.item_codigo)}</span>
     <h3 style="margin-top:2px;">${escHtml(c.item_nombre)}</h3>
     <div class="msub">Selecciona el o los lotes a consumir</div>
-    <div id="selCartonLoteList"><div class="empty-state">Cargando…</div></div>
+    <div id="selCartonLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="lote-remain" id="selCartonLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -10740,7 +11103,7 @@ async function openSelLotePicker(tipo, itemId){
   openModal(`
     <h3>${escHtml(it.item_nombre)}</h3>
     <div class="msub">Selecciona el lote disponible en Kardex</div>
-    <div id="selLoteList"><div class="empty-state">Cargando…</div></div>
+    <div id="selLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Volver</button></div>
   `);
   const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', it.item_codigo).order('fecha_ingreso');
@@ -10845,7 +11208,7 @@ async function renderSelladoRegistrosTab(){
       <button class="btn" style="width:100%;" onclick="exportSelladoExcel()">⬇ Descargar Excel</button>
     </div>
     <div class="list-meta" id="srMeta">Cargando…</div>
-    <div class="reg-list" id="srList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="srList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('srSearch').addEventListener('input', e=>{ SelRegState.q = e.target.value; selRenderRegistrosList(); });
   document.getElementById('srDesde').addEventListener('change', e=>{ SelRegState.desde = e.target.value; selRegReload(); });
@@ -11082,7 +11445,7 @@ async function renderBodega(){
       <button class="tabbtn ${BodState.tab==='recepcion'?'active':''}" data-tab="recepcion" onclick="bodGoTab('recepcion')">Recepción</button>
       <button class="tabbtn ${BodState.tab==='registros'?'active':''}" data-tab="registros" onclick="bodGoTab('registros')">Registros</button>
     </div>
-    <div id="bodRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="bodRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await bodLoad(false);
   await bodRenderRootBody();
@@ -11640,7 +12003,7 @@ async function renderBodRegistrosTab(){
       <button class="btn" style="width:100%;" onclick="bodExportExcel()">⬇ Descargar Excel</button>
     </div>
     <div class="list-meta" id="brMeta">Cargando…</div>
-    <div class="reg-list" id="brList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="brList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('brSearch').addEventListener('input', e=>{ BodRegState.q=e.target.value; bodRenderRegistrosList(); });
   document.getElementById('brDesde').addEventListener('change', e=>{ BodRegState.desde=e.target.value; bodRegReload(); });
@@ -11891,7 +12254,7 @@ async function renderDespacho(){
       <button class="tabbtn ${DespState.tab==='liberacion'?'active':''}" data-tab="liberacion" onclick="despGoTab('liberacion')">Liberación de producto</button>
       <button class="tabbtn ${DespState.tab==='registros'?'active':''}" data-tab="registros" onclick="despGoTab('registros')">Registros</button>
     </div>
-    <div id="despRoot"><div class="empty-state">Cargando…</div></div>
+    <div id="despRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   await despLoad(false);
   despRenderRootBody();
@@ -11906,7 +12269,7 @@ async function despRenderDespachosTab(){
         <input type="text" id="despEntSearch" placeholder="Buscar por cliente, N° de OC o producto…" oninput="despEntFiltrar(this.value)">
       </div>
     </div>
-    <div class="reg-list" id="despEntLista"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="despEntLista"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   if(!cacheCodigosCliente) await entLoadCodigosCliente();
   DespEntSemana = await despEntListaTodas();
@@ -12146,7 +12509,7 @@ async function despConfirmCantidad(codigo){
   openModal(`
     <h3>${escHtml(item.nombre)}</h3>
     <div class="msub">Elige los lotes hasta completar ${fmtNum(cant)} ${escHtml(item.medida)}</div>
-    <div id="despLoteList"><div class="empty-state">Cargando…</div></div>
+    <div id="despLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="lote-remain" id="despLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -12264,15 +12627,21 @@ async function despGuardarRegistro(){
   if(!d.hora_salida) d.hora_salida = nowHM();
   const payload = { ...d, estado:'cerrado', updated_at: new Date().toISOString() };
   const isEdit = !!payload.id;
-  let saved, error;
+  let saved, error, numeroFinal = d.numero_despacho;
   if(isEdit){
     const id = payload.id; delete payload.id;
     ({ data: saved, error } = await sb.from('despacho_registros').update(payload).eq('id', id).select().single());
   } else {
-    ({ data: saved, error } = await sb.from('despacho_registros').insert(payload).select().single());
+    // El número ya se había reservado al abrir el formulario, pero puede
+    // haber pasado tiempo — si otro dispositivo lo tomó mientras tanto, se
+    // pide uno nuevo solo y se reintenta, sin que el usuario note nada.
+    ({ data: saved, error, numero: numeroFinal } = await insertarConSecuenciaUnica(
+      nextDespachoN,
+      (numero)=>sb.from('despacho_registros').insert({ ...payload, numero_despacho: numero }).select().single()
+    ));
   }
   if(error){ toast('Error al guardar: ' + error.message); return; }
-  const comprobante = 'DESPACHO N°' + d.numero_despacho + ': FACTURA ' + (d.factura||'—');
+  const comprobante = 'DESPACHO N°' + numeroFinal + ': FACTURA ' + (d.factura||'—');
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
   const movimientos = [];
   (d.items||[]).forEach(it=>{
@@ -12334,7 +12703,7 @@ async function renderDespRegistrosTab(){
       <button class="btn" style="width:100%;" onclick="despExportExcel()">⬇ Descargar Excel</button>
     </div>
     <div class="list-meta" id="drMeta">Cargando…</div>
-    <div class="reg-list" id="drList"><div class="empty-state">Cargando…</div></div>
+    <div class="reg-list" id="drList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
   document.getElementById('drSearch').addEventListener('input', e=>{ DespRegState.q=e.target.value; despRenderRegistrosList(); });
   document.getElementById('drDesde').addEventListener('change', e=>{ DespRegState.desde=e.target.value; despRegReload(); });
