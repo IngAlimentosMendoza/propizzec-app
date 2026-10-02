@@ -3938,7 +3938,7 @@ function openFormulacionForm(codigoProducto){
     fmPresPrevMedida = formProducto.presentacion_medida;
     formIngredientes = filas.map(r=>{
       const it = (cacheItems||[]).find(i=>i.codigo===r.cod_componente);
-      return { codigo:r.cod_componente, nombre: it?it.nombre:r.cod_componente, medida:r.medida, cantidad:Number(r.cantidad||0) };
+      return { codigo:r.cod_componente, nombre: it?it.nombre:r.cod_componente, medida:r.medida, cantidad:Number(r.cantidad||0), activo: it?it.activo!==false:true };
     });
   } else {
     formProducto = null;
@@ -4074,8 +4074,8 @@ function fmRenderIngList(){
   else{
     wrap.innerHTML = formIngredientes.map(ing=>{
       const pct = totalPres ? (ing.cantidad/totalPres*100) : 0;
-      return `<div class="ing-row">
-        <div class="ing-name"><span class="sup">${escHtml(ing.codigo)}</span><span class="nm">${escHtml(ing.nombre)}</span></div>
+      return `<div class="ing-row" ${ing.activo?'':'style="opacity:.55;"'}>
+        <div class="ing-name"><span class="sup">${escHtml(ing.codigo)}</span><span class="nm">${escHtml(ing.nombre)}${ing.activo?'':' — ⚠ item desactivado, no se usará en órdenes nuevas'}</span></div>
         <div class="ing-qty">
           ${medidaSelectFor(ing)}
           <input type="text" inputmode="decimal" value="${fmtRaw(ing.cantidad)}" oninput="fmSetIngQty('${escHtml(ing.codigo)}', this.value)">
@@ -9781,7 +9781,7 @@ function productoTieneFormulaPropia(itemCodigo){
   return (cacheFormulacion||[]).some(f=>f.cod_producto_principal===itemCodigo);
 }
 function esIngredienteDeCronograma(item){
-  if(!item) return false;
+  if(!item || item.activo===false) return false; // un ítem desactivado deja de contar como ingrediente para órdenes nuevas
   if(esTipoMateriaPrima(item)) return true;
   if(item.es_extra_cronograma) return true;
   // Un producto que a su vez tiene su propia fórmula (ej. la masa dentro de
