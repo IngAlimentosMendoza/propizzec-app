@@ -682,6 +682,7 @@ catch(e){ console.error('No se pudo iniciar Supabase', e); }
 // usuario (que ya se ven solos al guardar), solo por los de otro dispositivo.
 let ultimaEscrituraPropia = 0;
 let refrescoSilenciosoActivo = false; // true mientras se refresca por un cambio de otro dispositivo, sin que el usuario lo haya pedido
+let cronogramaIngredientesAbiertoId = null; // id de la orden cuya lista de ingredientes se está viendo ahora mismo (si alguna)
 if(sb){
   const sbFromOriginal = sb.from.bind(sb);
   sb.from = function(tabla){
@@ -2687,7 +2688,36 @@ const REFRESCO_GRANULAR_POR_TABLA = {
     return true;
   },
 };
+// Cada orden de Cronograma guarda su lista de ingredientes ANIDADA dentro de
+// la propia fila en cacheCronograma (no es una tabla aparte en la pantalla),
+// así que acá se actualiza esa lista interna en vez de un arreglo propio.
+function aplicarCambioEnCronogramaIngredientes(payload){
+  const row = payload.new || payload.old;
+  if(!row) return;
+  const padre = (cacheCronograma||[]).find(c=>c.id===row.cronograma_id);
+  if(!padre) return;
+  const lista = padre.cronograma_ingredientes || [];
+  if(payload.eventType === 'DELETE'){
+    padre.cronograma_ingredientes = lista.filter(ci=>ci.id!==payload.old.id);
+  } else {
+    const idx = lista.findIndex(ci=>ci.id===payload.new.id);
+    if(idx>=0){ const copia = lista.slice(); copia[idx] = { ...copia[idx], ...payload.new }; padre.cronograma_ingredientes = copia; }
+    else { padre.cronograma_ingredientes = [...lista, payload.new]; }
+  }
+}
 async function manejarCambioEnVivo(tabla, payload){
+  if(tabla === 'cronograma_ingredientes'){
+    aplicarCambioEnCronogramaIngredientes(payload);
+    // Esta se actualiza AL INSTANTE, incluso con una ventana abierta — es
+    // justamente para avisar mientras alguien está mirando o llenando esa
+    // misma lista de ingredientes, que es el caso que se quiere cubrir:
+    // que no se vaya a pisar lo que otro dispositivo ya puso.
+    const cronogramaIdDelCambio = (payload.new||payload.old).cronograma_id;
+    if(cronogramaIngredientesAbiertoId && cronogramaIdDelCambio===cronogramaIngredientesAbiertoId && document.getElementById('pfIngList')){
+      pfRenderIngredientes(cronogramaIngredientesAbiertoId);
+    }
+    return;
+  }
   if(tabla === 'kardex_movimientos') await actualizarCacheStockPorMovimiento(payload);
   else if(tabla === 'sellado_registros') actualizarCacheSellado(payload);
   else aplicarCambioEnCache(tabla, payload); // la caché se pone al día de inmediato, sin esperar
@@ -5141,6 +5171,7 @@ function openCronogramaFormNormal(id){
       <button class="btn primary" style="--accent:var(--produccion)" onclick="guardarProduccion('${id}')">✓ Finalizar producción</button>
     </div>
   `);
+  cronogramaIngredientesAbiertoId = id; // para que la sincronización en vivo sepa qué lista de ingredientes refrescar si cambia desde otro dispositivo
   pfRenderIngredientes(id);
   pfLoadParadasSection(id);
 }
