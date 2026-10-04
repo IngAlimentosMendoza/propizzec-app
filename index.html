@@ -723,7 +723,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-7</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.04-2</div>
     </div>
   </nav>
 
@@ -2696,6 +2696,7 @@ function enterApp(area){
     renderEnConstruccion();
   } else {
     if(permiso) currentModule = permiso.defaultModulo || permiso.modulos[0];
+    history.replaceState({ propizzecNav:true, mod:currentModule, tab:navTabActual(currentModule) }, ''); // la página principal del área es el punto de partida
     goModule(currentModule);
   }
   subscribeConnStatus();
@@ -3179,6 +3180,39 @@ async function irAAlerta(alertaId){
   }
   window.scrollTo({top:0,behavior:'instant'});
 }
+/* ===== Navegación con el botón "atrás" (celular) y los botones atrás/adelante (computador) =====
+   Cada cambio de módulo o de pestaña queda registrado como un paso en el historial del
+   navegador. Así "atrás" va retrocediendo pantalla por pantalla —igual que lo que se fue
+   abriendo— hasta llegar a la página principal del área, y recién ahí sale de la app.
+   Las ventanas emergentes ya tenían su propio paso (se cierran primero). */
+let navRestaurando = false;
+const NAV_TAB = {
+  inventario:()=>InvState, planificacion:()=>PlanState, etiquetado:()=>EtiqState, monitoreo:()=>MonState,
+  calidad:()=>CalState, entregas:()=>EntState, indicadores:()=>IndState, sellado:()=>SelTabState,
+  bodega:()=>BodState, despacho:()=>DespState
+};
+function navTabActual(mod){
+  try{ const f = NAV_TAB[mod]; const s = f && f(); return s ? (s.tab||null) : null; }catch(e){ return null; }
+}
+function navRegistrar(mod, tab){
+  if(navRestaurando || !mod) return;
+  const shell = document.getElementById('appShell');
+  if(!shell || shell.style.display === 'none') return;      // sin sesión iniciada
+  const bg = document.getElementById('modalBg');
+  if(bg && bg.classList.contains('show')) return;            // dentro de una ventana emergente no se registra
+  if(tab === undefined) tab = navTabActual(mod);
+  const st = history.state;
+  if(st && st.propizzecNav && st.mod===mod && (st.tab||null)===(tab||null)) return; // ya estamos en ese paso
+  history.pushState({ propizzecNav:true, mod, tab: tab||null }, '');
+}
+function navRestaurar(est){
+  navRestaurando = true; refrescoSilenciosoActivo = true;   // no vuelve a registrar ni reinicia la fecha elegida
+  try{
+    const f = NAV_TAB[est.mod]; const s = f && f();
+    if(s && est.tab) s.tab = est.tab;
+    goModule(est.mod);
+  } finally { refrescoSilenciosoActivo = false; navRestaurando = false; }
+}
 function goModule(mod){
   if(mod === 'alertas'){
     currentModule = 'alertas';
@@ -3186,6 +3220,7 @@ function goModule(mod){
     closeSidebar();
     renderAlertasPage();
     window.scrollTo({top:0,behavior:'instant'});
+    navRegistrar('alertas');
     return;
   }
   const permiso = permisoActual();
@@ -3195,6 +3230,7 @@ function goModule(mod){
   closeSidebar();
   renderModule(mod);
   window.scrollTo({top:0,behavior:'instant'});
+  navRegistrar(mod);
 }
 function renderModule(mod){
   if(mod === 'inventario'){ renderInventario(); return; }
@@ -3312,12 +3348,100 @@ function closeModal(desdeBackFisico){
     // con su propio gesto — no hace falta tocar nada más aquí.
   }
 }
-window.addEventListener('popstate', ()=>{
+window.addEventListener('popstate', (e)=>{
   if(suprimirPopstate){ suprimirPopstate = false; return; }
   if(document.getElementById('modalBg').classList.contains('show')){
     closeModal(true);
+    return;
+  }
+  const est = e.state;
+  if(est && est.propizzecNav){
+    const shell = document.getElementById('appShell');
+    if(shell && shell.style.display !== 'none') navRestaurar(est);
   }
 });
+/* ===== Tecla Enter en toda la aplicación (y botón "Siguiente/Listo" del teclado del celular) =====
+   - Buscador con resultados: Enter elige el primero.
+   - Campo de "escribir y añadir": Enter pasa al siguiente campo; en el último, pulsa "+ Añadir".
+   - Ventana emergente: Enter pasa al siguiente campo; en el último guarda/confirma (si la ventana
+     solo tiene un campo, como una cantidad, guarda directo). Las acciones grandes quedan fuera con
+     data-enter="no" (ej. Finalizar producción).
+   - Páginas: Enter confirma el campo y baja el teclado, o pasa al siguiente campo del mismo bloque;
+     nunca guarda una página completa por sí solo.
+   - Áreas de texto (observaciones) y listas desplegables no se tocan: Enter sigue siendo salto de línea. */
+function enterEsCampoTexto(el){
+  if(!el || el.tagName!=='INPUT') return false;
+  return ['text','search','number','tel','email','url','password','date','time','datetime-local','month','week'].includes((el.type||'text').toLowerCase());
+}
+function enterEditables(raiz){
+  return Array.from(raiz.querySelectorAll('input,select,textarea')).filter(el=>{
+    if(el.disabled || el.readOnly) return false;
+    if(['hidden','checkbox','radio','file','button','submit','color','range'].includes((el.type||'').toLowerCase())) return false;
+    return el.getClientRects().length>0; // solo los que se ven (los pasos bloqueados quedan fuera)
+  });
+}
+function enterBotonAgregar(input){
+  let nodo = input.parentElement;
+  for(let nivel=0; nodo && nivel<3; nivel++, nodo=nodo.parentElement){
+    if(nodo.id==='modalPanel' || nodo.id==='app' || nodo===document.body) break;
+    const btn = Array.from(nodo.querySelectorAll('button')).find(b=>{
+      if(b.disabled || !b.getClientRects().length) return false;
+      const oc = b.getAttribute('onclick')||'';
+      return /(^|[^A-Za-z])[A-Za-z]*(Add|Agregar|Anadir)[A-Za-z]*\(/.test(oc) || /^\s*\+\s*(añadir|agregar|nuevo|nueva)/i.test(b.textContent);
+    });
+    if(btn){
+      const campos = enterEditables(nodo);
+      if(campos.length<=4 && campos.includes(input)) return { btn, campos };
+    }
+  }
+  return null;
+}
+function enterBotonFinal(panel){
+  return Array.from(panel.querySelectorAll('.modal-actions .btn.primary')).filter(b=>!b.disabled && b.dataset.enter!=='no' && b.getClientRects().length).pop() || null;
+}
+function enterPlan(el){
+  const campo = el.closest('.field') || el.parentElement;
+  const primero = campo ? campo.querySelector('.search-results .sr-item') : null;
+  if(primero) return { accion:'clic', nodo:primero, hint:'go' };
+  const add = enterBotonAgregar(el);
+  if(add){
+    const i = add.campos.indexOf(el);
+    return i < add.campos.length-1 ? { accion:'foco', nodo:add.campos[i+1], hint:'next' } : { accion:'clic', nodo:add.btn, hint:'done' };
+  }
+  if(el.closest('.search-wrap, .list-toolbar')) return { accion:'blur', hint:'search' };
+  const panel = el.closest('#modalPanel');
+  const raiz = panel || el.closest('.card');
+  if(!raiz) return { accion:'blur', hint:'done' };
+  const campos = enterEditables(raiz);
+  const i = campos.indexOf(el);
+  if(i>=0 && i<campos.length-1) return { accion:'foco', nodo:campos[i+1], hint:'next' };
+  if(panel){
+    const prim = enterBotonFinal(panel);
+    if(prim) return { accion:'clic', nodo:prim, hint:'done', soltar:true };
+  }
+  return { accion:'blur', hint:'done' };
+}
+document.addEventListener('keydown', (e)=>{
+  if(e.key!=='Enter' || e.defaultPrevented || e.isComposing || e.shiftKey || e.ctrlKey || e.altKey || e.metaKey) return;
+  if(document.getElementById('dlgPropizzec')) return;                       // cuadros de confirmación: tienen su propio Enter
+  const login = document.getElementById('loginOverlay');
+  if(login && login.style.display==='flex') return;                          // inicio de sesión: ya lo maneja
+  const el = e.target;
+  if(!enterEsCampoTexto(el)) return;                                         // áreas de texto, listas y botones: comportamiento normal
+  e.preventDefault();
+  const plan = enterPlan(el);
+  if(plan.accion==='foco'){ plan.nodo.focus(); if(plan.nodo.select && plan.nodo.tagName==='INPUT' && !['date','time'].includes(plan.nodo.type)) { try{ plan.nodo.select(); }catch(_){} } }
+  else if(plan.accion==='clic'){ if(plan.soltar) el.blur(); plan.nodo.click(); }
+  else { el.blur(); }
+});
+// Rotula la tecla Enter del teclado del celular ("Siguiente", "Listo", "Buscar") según lo que hará.
+function enterRotular(e){
+  const el = e.target;
+  if(!enterEsCampoTexto(el)) return;
+  try{ el.enterKeyHint = enterPlan(el).hint; }catch(_){}
+}
+document.addEventListener('focusin', enterRotular);
+document.addEventListener('input', enterRotular);
 // En computadora, la tecla Backspace retrocede la página en algunos
 // navegadores si no se está escribiendo en un campo — eso puede disparar el
 // cierre de una ventana sin que la persona lo haya pedido. Se evita ese
@@ -3376,6 +3500,7 @@ document.addEventListener('click', function(e){
   ultimoClickBoton.set(btn, ahora);
 }, true);
 function setActiveTab(activeVal){
+  navRegistrar(currentModule, activeVal);
   document.querySelectorAll('.tabbar .tabbtn').forEach(b=>{
     b.classList.toggle('active', b.dataset.tab===activeVal);
   });
@@ -5442,7 +5567,7 @@ function openCronogramaFormNormal(id){
 
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
-      <button class="btn primary" style="--accent:var(--produccion)" onclick="guardarProduccion('${id}')">✓ Finalizar producción</button>
+      <button class="btn primary" data-enter="no" style="--accent:var(--produccion)" onclick="guardarProduccion('${id}')">✓ Finalizar producción</button>
     </div>
   `);
   cronogramaIngredientesAbiertoId = id; // para que la sincronización en vivo sepa qué lista de ingredientes refrescar si cambia desde otro dispositivo
@@ -7004,7 +7129,7 @@ async function despAbrirAsignacion(entregaId){
     <div class="reg-list" style="margin-top:10px;" id="despAsigItemsList">${despRenderFilasAsignacion()}</div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
-      ${e.completado ? '' : `<button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmarAsignacion()">✓ Confirmar despacho</button>`}
+      ${e.completado ? '' : `<button class="btn primary" data-enter="no" style="--accent:var(--paradas)" onclick="despConfirmarAsignacion()">✓ Confirmar despacho</button>`}
     </div>
   `);
 }
