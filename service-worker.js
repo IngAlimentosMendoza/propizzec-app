@@ -3,7 +3,7 @@
 // aunque la conexión falle momentáneamente. Los datos siempre se piden
 // en vivo a Supabase — esto NO guarda información de producción offline.
 
-const CACHE_NAME = 'propizzec-shell-v1';
+const CACHE_NAME = 'propizzec-shell-v2';
 const SHELL_FILES = ['./', './index.html', './manifest.json'];
 
 self.addEventListener('install', (event) => {

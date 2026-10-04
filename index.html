@@ -658,7 +658,10 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="bodega" onclick="goModule('bodega')"><span class="ic">🏬</span> Bodega</button>
     <button class="side-item" data-mod="despacho" onclick="goModule('despacho')"><span class="ic">🚚</span> Logística</button>
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
-    <div class="side-foot"><button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button></div>
+    <div class="side-foot">
+      <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-1</div>
+    </div>
   </nav>
 
   <main id="app"></main>
@@ -3143,6 +3146,7 @@ function closeModal(desdeBackFisico){
   } else {
     document.getElementById('modalBg').classList.remove('show');
     document.getElementById('modalPanel').innerHTML = '';
+    cronogramaIngredientesAbiertoId = null; // se cerró la última ventana — ya no hay ninguna lista de ingredientes en pantalla
   }
   if(modalHistoryDepth>0){
     modalHistoryDepth--;
@@ -3163,9 +3167,33 @@ window.addEventListener('popstate', ()=>{
     closeModal(true);
   }
 });
+// En computadora, la tecla Backspace retrocede la página en algunos
+// navegadores si no se está escribiendo en un campo — eso puede disparar el
+// cierre de una ventana sin que la persona lo haya pedido. Se evita ese
+// retroceso accidental cuando no se está editando nada.
+window.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Backspace') return;
+  const el = document.activeElement;
+  const editable = el && (el.tagName==='INPUT' || el.tagName==='TEXTAREA' || el.isContentEditable);
+  if(!editable) e.preventDefault();
+});
+// Autocorrección de respaldo: si por cualquier motivo quedara la ventana de
+// fondo (modalBg) activa pero sin ningún contenido adentro — algo que nunca
+// debería pasar, pero que de pasar deja toda la pantalla tapada por un
+// cuadro invisible, sin poder tocar ni escribir en nada — se corrige sola
+// en el primer clic, en vez de obligar a cerrar y volver a abrir la app.
+document.addEventListener('click', ()=>{
+  const bg = document.getElementById('modalBg');
+  const panel = document.getElementById('modalPanel');
+  if(bg && panel && bg.classList.contains('show') && !panel.innerHTML.trim()){
+    console.warn('Se encontró una ventana de fondo activa sin contenido — se corrigió sola.');
+    bg.classList.remove('show');
+  }
+}, true);
 function closeModalAll(){
   modalStack = [];
   currentModalHook = null;
+  cronogramaIngredientesAbiertoId = null; // ya no hay ninguna lista de ingredientes en pantalla
   document.getElementById('modalBg').classList.remove('show');
   document.getElementById('modalPanel').innerHTML = '';
   if(modalHistoryDepth>0){
@@ -4539,20 +4567,29 @@ async function deleteCronogramaRow(id){
     ? '¿Eliminar esta orden del cronograma? También se eliminarán sus ' + hijas.length + ' preparación(es) previa(s) vinculada(s) (' + hijas.map(h=>h.orden_produccion).join(', ') + ') y toda su información relacionada en Kardex.'
     : '¿Eliminar esta orden del cronograma? También se eliminará su información relacionada en Kardex.';
   if(!confirm(confirmMsg)) return;
-  for(const hija of hijas){
-    await crEliminarOrdenYSuKardex(hija.id);
+  try{
+    for(const hija of hijas){
+      await crEliminarOrdenYSuKardex(hija.id);
+    }
+    await crEliminarOrdenYSuKardex(id);
+    cacheRegistroTodo = null; // invalidar caché de Indicadores
+    await Promise.all([planLoad(true), invLoad(true)]);
+    toast('Orden eliminada' + (hijas.length ? (', junto con ' + hijas.length + ' preparación(es) previa(s)') : '') + ' y su información de Kardex');
+    renderCronogramaTab();
+  }catch(e){
+    console.error('Error eliminando la orden:', e);
+    toast('Algo falló al eliminar — revisa la consola (F12) y avísame qué dice. La orden puede haber quedado a medio borrar.');
+    try{ await Promise.all([planLoad(true), invLoad(true)]); renderCronogramaTab(); }catch(e2){}
   }
-  await crEliminarOrdenYSuKardex(id);
-  cacheRegistroTodo = null; // invalidar caché de Indicadores
-  await Promise.all([planLoad(true), invLoad(true)]);
-  toast('Orden eliminada' + (hijas.length ? (', junto con ' + hijas.length + ' preparación(es) previa(s)') : '') + ' y su información de Kardex');
-  renderCronogramaTab();
 }
-function crRecolectarDescendientes(id){
+function crRecolectarDescendientes(id, vistos){
+  vistos = vistos || new Set();
+  if(vistos.has(id)) return []; // protección: si algo quedó mal y una orden terminó apuntándose a sí misma (directa o indirectamente), esto corta el ciclo en vez de colgarse para siempre
+  vistos.add(id);
   const directas = (cacheCronograma||[]).filter(c=>c.orden_padre_id===id);
   let todas = directas.slice();
   for(const hija of directas){
-    todas = todas.concat(crRecolectarDescendientes(hija.id));
+    todas = todas.concat(crRecolectarDescendientes(hija.id, vistos));
   }
   return todas;
 }
@@ -5473,6 +5510,7 @@ function crTargetIdIngredientes(cronogramaId){
 }
 async function crIngDelete(ciId, cronogramaId){
   if(!confirm('¿Eliminar este ingrediente de la orden?')) return;
+ try{
   // Si ese ingrediente ya tenía un lote elegido (y por lo tanto ya se había
   // descontado del Kardex), hay que revertir ese descuento antes de borrarlo.
   const rowActual = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
@@ -5483,6 +5521,11 @@ async function crIngDelete(ciId, cronogramaId){
   await Promise.all([planLoad(true), invLoad(true)]);
   pfRenderIngredientes(cronogramaId, crTargetIdIngredientes(cronogramaId));
   toast('Ingrediente eliminado y su Kardex revertido');
+ }catch(e){
+  console.error('Error eliminando el ingrediente:', e);
+  toast('Algo falló al eliminar el ingrediente — revisa la consola (F12) y avísame qué dice.');
+  try{ await planLoad(true); pfRenderIngredientes(cronogramaId, crTargetIdIngredientes(cronogramaId)); }catch(e2){}
+ }
 }
 
 /* ---------------- Captura Inicio / Fin / Cantidad directa, con calculadora ---------------- */
