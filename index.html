@@ -660,7 +660,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-2</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-3</div>
     </div>
   </nav>
 
@@ -2382,6 +2382,59 @@ function updateDbStat(msg){
   const dot = document.getElementById('syncDot');
   if(dot) dot.style.background = lastSyncOk===true ? '#7FDB8C' : lastSyncOk===false ? '#E07A4E' : '#8A8F98';
 }
+
+/* ============ Cuadros de diálogo propios (reemplazan confirm/alert/prompt nativos) ============
+   Los cuadros nativos del navegador bloquean la página y, en computadora (sobre todo en la app
+   de Windows), al cerrarse dejan la ventana sin foco de teclado: los botones siguen funcionando
+   pero los campos de texto no muestran cursor ni aceptan escritura. Estos son parte de la propia
+   página, así que el foco nunca se pierde. */
+function _dialogoPropio(mensaje, opciones){
+  return new Promise(resolve=>{
+    const previo = document.getElementById('dlgPropizzec'); if(previo) previo.remove();
+    const fondo = document.createElement('div');
+    fondo.id = 'dlgPropizzec';
+    fondo.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,.55);z-index:1000000;display:flex;align-items:center;justify-content:center;padding:16px;';
+    const caja = document.createElement('div');
+    caja.style.cssText = 'background:#fff;color:#0F172A;border-radius:14px;max-width:420px;width:100%;padding:20px;box-shadow:0 20px 50px rgba(0,0,0,.35);font-size:14px;line-height:1.5;';
+    const txt = document.createElement('div');
+    txt.style.cssText = 'white-space:pre-wrap;margin-bottom:14px;';
+    txt.textContent = mensaje;
+    caja.appendChild(txt);
+    let input = null;
+    if(opciones.input){
+      input = document.createElement('input');
+      input.type = 'text'; input.value = opciones.valor || '';
+      input.style.cssText = 'width:100%;box-sizing:border-box;height:42px;margin-bottom:14px;padding:0 10px;border:1px solid #CBD5E1;border-radius:8px;font-size:15px;';
+      caja.appendChild(input);
+    }
+    const fila = document.createElement('div');
+    fila.style.cssText = 'display:flex;gap:10px;justify-content:flex-end;';
+    const cerrar = (valor)=>{ fondo.remove(); document.removeEventListener('keydown', teclas, true); resolve(valor); };
+    if(opciones.cancelar){
+      const bc = document.createElement('button');
+      bc.className = 'btn ghost'; bc.textContent = 'Cancelar';
+      bc.onclick = ()=>cerrar(opciones.input ? null : false);
+      fila.appendChild(bc);
+    }
+    const bo = document.createElement('button');
+    bo.className = 'btn'; bo.textContent = opciones.textoOk || 'Aceptar';
+    bo.style.cssText = 'background:'+(opciones.peligro?'#DC2626':'#0F172A')+';color:#fff;';
+    bo.onclick = ()=>cerrar(opciones.input ? input.value : true);
+    fila.appendChild(bo);
+    caja.appendChild(fila);
+    fondo.appendChild(caja);
+    const teclas = (e)=>{
+      if(e.key==='Escape'){ e.stopPropagation(); cerrar(opciones.input ? null : false); }
+      else if(e.key==='Enter'){ e.stopPropagation(); e.preventDefault(); bo.click(); }
+    };
+    document.addEventListener('keydown', teclas, true);
+    document.body.appendChild(fondo);
+    (input || bo).focus();
+  });
+}
+function confirmar(mensaje){ return _dialogoPropio(mensaje, { cancelar:true, textoOk:'Aceptar', peligro:/elimin|borrar|descart|quitar|revert|reinici/i.test(mensaje) }); }
+function avisar(mensaje){ return _dialogoPropio(mensaje, { cancelar:false, textoOk:'Entendido' }); }
+function preguntar(mensaje, valor){ return _dialogoPropio(mensaje, { cancelar:true, input:true, valor:valor, textoOk:'Aceptar' }); }
 function toast(msg){
   const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show');
   clearTimeout(toast._h); toast._h=setTimeout(()=>t.classList.remove('show'),2400);
@@ -3704,7 +3757,7 @@ function renderAjustesList(){
   }).join('');
 }
 async function eliminarAjuste(id){
-  if(!confirm('¿Eliminar este ajuste? Se revertirá su efecto en el Kardex.')) return;
+  if(!await confirmar('¿Eliminar este ajuste? Se revertirá su efecto en el Kardex.')) return;
   const { error } = await sb.from('kardex_movimientos').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   AjustesState.rows = (AjustesState.rows||[]).filter(r=>r.id!==id);
@@ -3758,7 +3811,7 @@ function toggleItemSelect(codigo, checked){
 }
 async function deleteSelectedItems(){
   if(!itemsSelected.size) return;
-  if(!confirm('¿Eliminar ' + itemsSelected.size + ' ítem(s) seleccionados de forma permanente?')) return;
+  if(!await confirmar('¿Eliminar ' + itemsSelected.size + ' ítem(s) seleccionados de forma permanente?')) return;
   const codes = Array.from(itemsSelected);
   const { error } = await sb.from('items').delete().in('codigo', codes);
   if(error){ toast('Error al eliminar: ' + error.message); return; }
@@ -3891,7 +3944,7 @@ async function saveItemForm(codigoEdit){
   renderItemsTab();
 }
 async function deleteOneItem(codigo){
-  if(!confirm('¿Eliminar el ítem ' + codigo + ' de forma permanente?')) return;
+  if(!await confirmar('¿Eliminar el ítem ' + codigo + ' de forma permanente?')) return;
   const { error } = await sb.from('items').delete().eq('codigo', codigo);
   if(error){ toast('Error al eliminar: ' + error.message); return; }
   closeModal();
@@ -4014,7 +4067,7 @@ function toggleFormSelect(codigo, checked){
 }
 async function deleteSelectedFormulaciones(){
   if(!formSelected.size) return;
-  if(!confirm('¿Eliminar la formulación de ' + formSelected.size + ' producto(s)?')) return;
+  if(!await confirmar('¿Eliminar la formulación de ' + formSelected.size + ' producto(s)?')) return;
   const codes = Array.from(formSelected);
   const { error } = await sb.from('formulacion').delete().in('cod_producto_principal', codes);
   if(error){ toast('Error al eliminar: ' + error.message); return; }
@@ -4595,12 +4648,12 @@ async function deleteCronogramaRow(id){
   for(const o of [row, ...hijas]){
     if(!o) continue;
     const bloqueo = await despMensajeBloqueoLote(o.item_codigo, o.lote);
-    if(bloqueo){ alert(bloqueo); return; }
+    if(bloqueo){ avisar(bloqueo); return; }
   }
   const confirmMsg = hijas.length
     ? '¿Eliminar esta orden del cronograma? También se eliminarán sus ' + hijas.length + ' preparación(es) previa(s) vinculada(s) (' + hijas.map(h=>h.orden_produccion).join(', ') + ') y toda su información relacionada en Kardex.'
     : '¿Eliminar esta orden del cronograma? También se eliminará su información relacionada en Kardex.';
-  if(!confirm(confirmMsg)) return;
+  if(!await confirmar(confirmMsg)) return;
   try{
     for(const hija of hijas){
       await crEliminarOrdenYSuKardex(hija.id);
@@ -4720,7 +4773,7 @@ async function crFinalizarOrden(row){
   if(PlanState.tab==='cronograma') renderCronogramaTab();
 }
 async function resetCronogramaProceso(id){
-  if(!confirm('¿Reiniciar el registro de inicio/fin de los ingredientes de esta orden?')) return;
+  if(!await confirmar('¿Reiniciar el registro de inicio/fin de los ingredientes de esta orden?')) return;
   await sb.from('cronograma_ingredientes').update({
     cantidad_inicio:null, cantidad_fin:null, cantidad_consumida:null, lotes_consumidos:[]
   }).eq('cronograma_id', id);
@@ -4897,7 +4950,7 @@ async function pmRemove(nombre){
   if(!row) return;
   const regs = (row.cronograma_personal||[]).filter(p=>p.nombre===nombre);
   if(!regs.length) return;
-  if(!confirm('¿Quitar a ' + nombre + ' de esta producción?\n\nSolo se quita de esta orden (no estuvo presente). Sigue disponible en su área para las demás producciones.')) return;
+  if(!await confirmar('¿Quitar a ' + nombre + ' de esta producción?\n\nSolo se quita de esta orden (no estuvo presente). Sigue disponible en su área para las demás producciones.')) return;
   for(const r of regs){
     const { error } = await sb.from('cronograma_personal').delete().eq('id', r.id);
     if(error){ toast('Error al quitar: ' + error.message); return; }
@@ -4985,7 +5038,7 @@ async function pfLoadParadasSection(cronogramaId){
   }
 }
 async function pfEliminarParada(paradaId, cronogramaId){
-  if(!confirm('¿Eliminar esta parada? (por si se registró por error)')) return;
+  if(!await confirmar('¿Eliminar esta parada? (por si se registró por error)')) return;
   const { data: actual } = await sb.from('paradas').select('inicio, motivo').eq('id', paradaId).single();
   const miembros = [cronogramaId, ...crFamiliaDe(cronogramaId).map(m=>m.id)];
   if(actual){
@@ -5311,7 +5364,7 @@ async function crConfirmCambioProducto(id, codigo){
   const row = (cacheCronograma||[]).find(c=>c.id===id);
   if(!row) return;
   if(codigo === row.item_codigo){ closeModalAll(); openCronogramaForm(id); return; }
-  if(!confirm('¿Cambiar el producto de esta orden? Se reemplazará la lista de ingredientes por la fórmula del nuevo producto.')) return;
+  if(!await confirmar('¿Cambiar el producto de esta orden? Se reemplazará la lista de ingredientes por la fórmula del nuevo producto.')) return;
   const { error } = await sb.from('cronograma').update({ item_codigo: codigo, cantidad_real: null }).eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   // Si algún ingrediente de la fórmula anterior ya tenía lote elegido (y por lo
@@ -5543,7 +5596,7 @@ function crTargetIdIngredientes(cronogramaId){
   return 'pfIngList';
 }
 async function crIngDelete(ciId, cronogramaId){
-  if(!confirm('¿Eliminar este ingrediente de la orden?')) return;
+  if(!await confirmar('¿Eliminar este ingrediente de la orden?')) return;
  try{
   // Si ese ingrediente ya tenía un lote elegido (y por lo tanto ya se había
   // descontado del Kardex), hay que revertir ese descuento antes de borrarlo.
@@ -5966,7 +6019,7 @@ async function openRegistroDetalle(id){
   openCronogramaForm(id);
 }
 async function deleteRegistroRow(id){
-  if(!confirm('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
+  if(!await confirmar('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
   await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   closeModal();
@@ -5974,7 +6027,7 @@ async function deleteRegistroRow(id){
   toast('Registro eliminado, junto con su información de Kardex');
 }
 async function deleteRegistroRowFromList(id){
-  if(!confirm('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
+  if(!await confirmar('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
   await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   await Promise.all([regReload(), invLoad(true)]);
@@ -6404,7 +6457,7 @@ async function etiqGuardarModal(){
 
   if(lote !== row.lote){
     const bloqueoLote = await despMensajeBloqueoLote(row.item_codigo, row.lote);
-    if(bloqueoLote){ alert(bloqueoLote); return; }
+    if(bloqueoLote){ avisar(bloqueoLote); return; }
     const { error: errLote } = await sb.from('cronograma').update({ lote }).eq('id', row.id);
     if(errLote){ toast('Error al actualizar el lote: ' + errLote.message); return; }
     row.lote = lote;
@@ -6460,8 +6513,8 @@ async function etiqBloqueoRegistro(id){
 }
 async function etiqEliminarME(id){
   const bloqueo = await etiqBloqueoRegistro(id);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
@@ -6532,8 +6585,8 @@ function renderEtiqRegistrosList(){
 }
 async function etiqEliminarMEDesdeRegistros(id){
   const bloqueo = await etiqBloqueoRegistro(id);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Eliminar este registro? Se revertirá lo descontado del Kardex.')) return;
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
@@ -6687,8 +6740,8 @@ function despEntRenderLista(containerId, rows, q, conBotonDespachar){
 // el descuento solo ocurre al guardar en Liberación de producto.
 async function despReiniciarEntrega(entregaId){
   const bloqueo = await despMensajeBloqueoEntrega(entregaId);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Reiniciar esta entrega? Se borran los lotes designados y vuelve a quedar pendiente en Sellado → Control de despacho para elegirlos de nuevo.')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Reiniciar esta entrega? Se borran los lotes designados y vuelve a quedar pendiente en Sellado → Control de despacho para elegirlos de nuevo.')) return;
   const { data: e } = await sb.from('entregas').select('items').eq('id', entregaId).single();
   if(!e){ toast('No se encontró la entrega'); return; }
   const items = (e.items||[]).map(it=>{ const { lotes_despacho, ...resto } = it; return resto; });
@@ -6707,7 +6760,7 @@ async function despIniciarLiberacionDesdeEntrega(entregaId){
   const { data: e } = await sb.from('entregas').select('*').eq('id', entregaId).single();
   if(!e){ toast('No se encontró la entrega'); return; }
   const yaDespachada = await despMensajeBloqueoEntrega(entregaId);
-  if(yaDespachada){ alert(yaDespachada); return; }
+  if(yaDespachada){ avisar(yaDespachada); return; }
   if(!cacheCodigosCliente) await entLoadCodigosCliente();
   const n = await nextDespachoN();
   const draft = despNuevoDraft(n);
@@ -7636,7 +7689,7 @@ async function entAbrirEditar(id){
   const e = (cacheEntregas||[]).find(x=>x.id===id) || (cacheEntregasRegistros||[]).find(x=>x.id===id);
   if(!e) return;
   const bloqueo = await despMensajeBloqueoEntrega(id);
-  if(bloqueo){ alert(bloqueo); return; }
+  if(bloqueo){ avisar(bloqueo); return; }
   EntFormItems = (e.items||[]).map(it=>({...it}));
   entRenderFormulario(e, e.fecha);
 }
@@ -7833,7 +7886,7 @@ async function entGuardarNueva(){
 }
 async function entGuardarEditar(id){
   const bloqueo = await despMensajeBloqueoEntrega(id);
-  if(bloqueo){ alert(bloqueo); return; }
+  if(bloqueo){ avisar(bloqueo); return; }
   const payload = entLeerCamposFormulario();
   if(!payload.cliente){ toast('Escribe el cliente'); return; }
   const { error } = await sb.from('entregas').update(payload).eq('id', id);
@@ -7844,8 +7897,8 @@ async function entGuardarEditar(id){
 }
 async function entEliminar(id){
   const bloqueo = await despMensajeBloqueoEntrega(id);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Eliminar esta entrega?')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Eliminar esta entrega?')) return;
   const { error } = await sb.from('entregas').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   closeModal();
@@ -8107,8 +8160,8 @@ async function calCuarResolver(id, nuevoEstado){
   const registro = (cacheCalCuarentena||[]).find(c=>c.id===id);
   if(!registro) return;
   const accionTxt = nuevoEstado==='aprobado' ? 'aprobar esta cantidad (vuelve a estar disponible)' : 'DESCARTAR esta cantidad (se dará de baja — no se puede deshacer)';
-  if(!confirm('¿Confirmas ' + accionTxt + '?')) return;
-  const resuelto_por = prompt('¿Quién autoriza esta decisión?', registro.responsable||'');
+  if(!await confirmar('¿Confirmas ' + accionTxt + '?')) return;
+  const resuelto_por = await preguntar('¿Quién autoriza esta decisión?', registro.responsable||'');
   if(!resuelto_por){ toast('Se necesita indicar quién autoriza'); return; }
   const { error } = await sb.from('cuarentena_lotes').update({
     estado: nuevoEstado, fecha_resolucion: todayISO(), resuelto_por
@@ -8126,7 +8179,7 @@ async function calCuarResolver(id, nuevoEstado){
   toast(nuevoEstado==='aprobado' ? 'Cantidad aprobada — ya está disponible de nuevo' : 'Cantidad descartada y dada de baja');
 }
 async function calCuarEliminar(id){
-  if(!confirm('¿Eliminar este registro de cuarentena? Si estaba activo, la cantidad vuelve a quedar disponible de inmediato.')) return;
+  if(!await confirmar('¿Eliminar este registro de cuarentena? Si estaba activo, la cantidad vuelve a quedar disponible de inmediato.')) return;
   const { error } = await sb.from('cuarentena_lotes').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   await calCuarLoad();
@@ -8618,7 +8671,7 @@ async function monVolverAVerificar(id){
   const reg = monEnsureRegistro(id);
   const cr = monGetCronograma(id);
   if(!cr) return;
-  if(!confirm('¿Enviar esta orden de vuelta a Cronograma para corregirla? Se revertirá lo que se haya registrado en Kardex por esta orden.')) return;
+  if(!await confirmar('¿Enviar esta orden de vuelta a Cronograma para corregirla? Se revertirá lo que se haya registrado en Kardex por esta orden.')) return;
   await kardexRevertirProduccion(cr);
   if(!reg._isNew){
     await sb.from('registro_produccion').update({ locked:false }).eq('cronograma_id', id);
@@ -8651,7 +8704,7 @@ async function monToggleLocked(id){
   const reg = monEnsureRegistro(id);
   if(reg._isNew){ toast('Guarda la verificación primero'); return; }
   const nuevoValor = !reg.locked;
-  if(nuevoValor && !confirm('¿Cerrar este registro? Dejará de aparecer como opción en Producción/Calidad Operativa. Podrás reabrirlo desde la pestaña Registros si necesitas corregirlo.')) return;
+  if(nuevoValor && !await confirmar('¿Cerrar este registro? Dejará de aparecer como opción en Producción/Calidad Operativa. Podrás reabrirlo desde la pestaña Registros si necesitas corregirlo.')) return;
   const { error } = await sb.from('registro_produccion').update({ locked: nuevoValor }).eq('cronograma_id', id);
   if(error){ toast('Error: '+error.message); return; }
   reg.locked = nuevoValor;
@@ -8744,9 +8797,9 @@ async function monToggleCandado(id){
   if(!reg) return;
   if(reg.locked){
     const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
-    if(bloqueo){ alert(bloqueo); return; }
+    if(bloqueo){ avisar(bloqueo); return; }
     // Abrir: vuelve a dejarlo disponible para editar en Producción Operativa (no toca Kardex todavía).
-    if(!confirm('¿Abrir este registro para editarlo en Producción Operativa?')) return;
+    if(!await confirmar('¿Abrir este registro para editarlo en Producción Operativa?')) return;
     const { error } = await sb.from('registro_produccion').update({ locked:false }).eq('id', id);
     if(error){ toast('Error: '+error.message); return; }
     reg.locked = false;
@@ -8790,8 +8843,8 @@ async function monRegDeleteFromList(id){
   const reg = (MonRegState.rows||[]).find(r=>r.id===id);
   if(!reg) return;
   const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Eliminar este registro permanentemente? También se eliminará de Cronograma/Registros de Planificación y se revertirá su Kardex. Esta acción no se puede deshacer.')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Eliminar este registro permanentemente? También se eliminará de Cronograma/Registros de Planificación y se revertirá su Kardex. Esta acción no se puede deshacer.')) return;
   await sb.from('registro_produccion').delete().eq('id', id);
   if(reg.cronograma_id) await crEliminarOrdenYSuKardex(reg.cronograma_id); // también borra ingredientes/personal/paradas de esa orden, no deja nada suelto
   cacheRegistroTodo = null;
@@ -8944,9 +8997,9 @@ async function monRegToggleLocked(){
   if(!nuevoValor){
     // se está reabriendo un registro cerrado
     const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
-    if(bloqueo){ alert(bloqueo); return; }
+    if(bloqueo){ avisar(bloqueo); return; }
   }
-  if(nuevoValor && !confirm('¿Cerrar este registro?')) return;
+  if(nuevoValor && !await confirmar('¿Cerrar este registro?')) return;
   const { error } = await sb.from('registro_produccion').update({ locked: nuevoValor }).eq('id', reg.id);
   if(error){ toast('Error: '+error.message); return; }
   reg.locked = nuevoValor;
@@ -8987,8 +9040,8 @@ async function monRegDelete(){
   const reg = MonRegState.editing;
   if(!reg) return;
   const bloqueo = await despMensajeBloqueoLote(reg.codigo_producto, reg.lote);
-  if(bloqueo){ alert(bloqueo); return; }
-  if(!confirm('¿Eliminar este registro permanentemente? Esta acción no se puede deshacer.')) return;
+  if(bloqueo){ avisar(bloqueo); return; }
+  if(!await confirmar('¿Eliminar este registro permanentemente? Esta acción no se puede deshacer.')) return;
   const { error } = await sb.from('registro_produccion').delete().eq('id', reg.id);
   if(error){ toast('Error: '+error.message); return; }
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + (reg.orden_produccion||reg.id));
@@ -9426,7 +9479,7 @@ async function cfgSetPersonalArea(id, area){
   toast('Área actualizada');
 }
 async function cfgRemovePersonal(id){
-  if(!confirm('¿Eliminar a esta persona de la lista?')) return;
+  if(!await confirmar('¿Eliminar a esta persona de la lista?')) return;
   const { error } = await sb.from('personal_planificacion').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   cachePersonalPlanificacion = (cachePersonalPlanificacion||[]).filter(p=>p.id!==id);
@@ -9481,7 +9534,7 @@ async function cfgSetMetaSellado(codigo, value){
   toast('Meta actualizada');
 }
 async function cfgRemoveMetaSellado(codigo){
-  if(!confirm('¿Eliminar la meta de este producto?')) return;
+  if(!await confirmar('¿Eliminar la meta de este producto?')) return;
   const { error } = await sb.from('metas_sellado').delete().eq('item_codigo', codigo);
   if(error){ toast('Error: '+error.message); return; }
   cacheMetasSellado = (cacheMetasSellado||[]).filter(m=>m.item_codigo!==codigo);
@@ -9580,7 +9633,7 @@ async function cfgToggleUsuario(id, nuevoValor){
   cfgRenderBody();
 }
 async function cfgEliminarUsuarioArea(id, area){
-  if(!confirm('¿Eliminar el área "' + area + '"? Desaparecerá de la pantalla de inicio de sesión.')) return;
+  if(!await confirmar('¿Eliminar el área "' + area + '"? Desaparecerá de la pantalla de inicio de sesión.')) return;
   const { error } = await sb.from('usuarios_area').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   cacheUsuariosArea = (cacheUsuariosArea||[]).filter(u=>u.id!==id);
@@ -9730,7 +9783,7 @@ async function cfgAddCodigoCliente(){
   toast('Código agregado');
 }
 async function cfgDeleteCodigoCliente(id){
-  if(!confirm('¿Eliminar este código?')) return;
+  if(!await confirmar('¿Eliminar este código?')) return;
   const { error } = await sb.from('producto_codigos_cliente').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   await entLoadCodigosCliente();
@@ -9784,7 +9837,7 @@ async function cfgAddCatalogo(tipo){
   toast('Agregado');
 }
 async function cfgRemoveCatalogo(id){
-  if(!confirm('¿Eliminar este valor del catálogo?')) return;
+  if(!await confirmar('¿Eliminar este valor del catálogo?')) return;
   const { error } = await sb.from('catalogos').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   await monLoad(true);
@@ -9803,7 +9856,7 @@ async function cfgAddTwoField(table, key1, key2){
   toast('Agregado');
 }
 async function cfgRemoveTwoField(table, id){
-  if(!confirm('¿Eliminar este registro?')) return;
+  if(!await confirmar('¿Eliminar este registro?')) return;
   const { error } = await sb.from(table).delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   await bodLoad(true);
@@ -10150,7 +10203,7 @@ async function selAgregarSelladora(){
 async function selEliminarSelladora(tipoKey){
   const totalSelladoras = SELLADO_ACTIVIDADES.filter(a=>a.esSellado).length;
   if(totalSelladoras<=1){ toast('Debe quedar al menos una selladora'); return; }
-  if(!confirm('¿Eliminar esta selladora? El historial que ya se guardó con ella no se pierde.')) return;
+  if(!await confirmar('¿Eliminar esta selladora? El historial que ya se guardó con ella no se pierde.')) return;
   const config = (cacheSelladoConfigAct||[]).find(a=>a.key===tipoKey);
   if(!config){ toast('No se encontró la selladora'); return; }
   const { error } = await sb.from('sellado_config_actividades').update({ activo:false }).eq('id', config.id);
@@ -10283,7 +10336,7 @@ function selAbrirSelectorParada(tipo, itemIdAPausar){
   `);
 }
 async function selEliminarTipoParada(id, tipo, itemId){
-  if(!confirm('¿Eliminar esta actividad de la lista de paradas?')) return;
+  if(!await confirmar('¿Eliminar esta actividad de la lista de paradas?')) return;
   const { error } = await sb.from('catalogos').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   SEL_TIPOS_PARADA = SEL_TIPOS_PARADA.filter(t=>t.id!==id);
@@ -10896,7 +10949,7 @@ function selRefrescarPendientesEnTodasLasSelladoras(){
   });
 }
 async function selDeleteItem(tipo, itemId){
-  if(!confirm('¿Eliminar este ítem?')) return;
+  if(!await confirmar('¿Eliminar este ítem?')) return;
   const row = SelladoState.sesiones[tipo];
   const it = (row.items||[]).find(i=>i.id===itemId);
   if(it && it.cartones && it.cartones.length){
@@ -11097,7 +11150,7 @@ function openSelItemModal(tipo, itemId, finalizando){
   // Un ítem ya finalizado de un lote que ya se despachó no se puede volver a editar.
   if(itRevisar && !finalizando && itRevisar.hora_fin && !itRevisar.es_parada && itRevisar.item_codigo && itRevisar.item_codigo!=='N/A'){
     despMensajeBloqueoLote(itRevisar.item_codigo, itRevisar.lote).then(m=>{
-      if(m) alert(m); else openSelItemModalNormal(tipo, itemId, finalizando);
+      if(m) avisar(m); else openSelItemModalNormal(tipo, itemId, finalizando);
     });
     return;
   }
@@ -11568,7 +11621,7 @@ async function selRegVerificar(rowId, itemId){
   if(!it) return;
   if(row.tipo_actividad !== 'REETRABAJO' && !it.es_parada && it.item_codigo && it.item_codigo!=='N/A'){
     const bloqueo = await despMensajeBloqueoLote(it.item_codigo, it.lote);
-    if(bloqueo){ alert(bloqueo); return; }
+    if(bloqueo){ avisar(bloqueo); return; }
   }
   if(row.tipo_actividad === 'REETRABAJO'){
     openModal(`
@@ -11660,12 +11713,12 @@ async function selRegEliminar(rowId, itemId){
   const esReetrabajo = row.tipo_actividad === 'REETRABAJO';
   if(!esReetrabajo && !it.es_parada && it.item_codigo && it.item_codigo!=='N/A'){
     const bloqueo = await despMensajeBloqueoLote(it.item_codigo, it.lote);
-    if(bloqueo){ alert(bloqueo); return; }
+    if(bloqueo){ avisar(bloqueo); return; }
   }
   const msg = esReetrabajo
     ? '¿Eliminar este ajuste? Esto también revertirá los movimientos que generó en el Kardex.'
     : '¿Eliminar este registro?';
-  if(!confirm(msg)) return;
+  if(!await confirmar(msg)) return;
   if(esReetrabajo && it.comprobantes && it.comprobantes.length){
     for(const c of it.comprobantes){
       await sb.from('kardex_movimientos').delete().eq('comprobante', c);
@@ -12232,8 +12285,8 @@ function bodSetParametro(param, valor){
 }
 
 /* ---------------- Guardar / Cancelar ---------------- */
-function bodCancelarDraft(){
-  if(!confirm('¿Cancelar esta recepción? Se perderá lo ingresado.')) return;
+async function bodCancelarDraft(){
+  if(!await confirmar('¿Cancelar esta recepción? Se perderá lo ingresado.')) return;
   BodState.draft = null;
   bodRenderRecepcion();
 }
@@ -12376,7 +12429,7 @@ function bodNuevaRecepcion(){
   bodRenderRecepcion();
 }
 async function bodEliminar(id){
-  if(!confirm('¿Eliminar esta compra? También se eliminará su información en Kardex.')) return;
+  if(!await confirmar('¿Eliminar esta compra? También se eliminará su información en Kardex.')) return;
   const row = (BodRegState.rows||[]).find(r=>r.id===id);
   if(row){
     const comprobante = 'COMPRA N°' + row.numero_compra + ': FACTURA ' + (row.factura||'—');
@@ -12937,8 +12990,8 @@ function despGuardarItemDetalle(itemId){
 }
 
 /* ---------------- Guardar / Cancelar ---------------- */
-function despCancelarDraft(){
-  if(!confirm('¿Cancelar este despacho? Se perderá lo ingresado.')) return;
+async function despCancelarDraft(){
+  if(!await confirmar('¿Cancelar este despacho? Se perderá lo ingresado.')) return;
   DespState.draft = null;
   despRenderLiberacion();
 }
@@ -13073,7 +13126,7 @@ function despNuevoDespacho(){
   despRenderLiberacion();
 }
 async function despEliminar(id){
-  if(!confirm('¿Eliminar este despacho? Esto también revertirá (devolverá) las cantidades descontadas del Kardex.')) return;
+  if(!await confirmar('¿Eliminar este despacho? Esto también revertirá (devolverá) las cantidades descontadas del Kardex.')) return;
   const row = (DespRegState.rows||[]).find(r=>r.id===id);
   if(row){
     const comprobante = 'DESPACHO N°' + row.numero_despacho + ': FACTURA ' + (row.factura||'—');
