@@ -30,7 +30,7 @@ self.addEventListener('fetch', (event) => {
   // con el caché como respaldo si no hay conexión.
   if (req.mode === 'navigate' || req.destination === 'document') {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' }) // ignora el caché normal del navegador, siempre pide la versión real más nueva
         .then((res) => {
           const resClone = res.clone();
           caches.open(CACHE_NAME).then((cache) => cache.put(req, resClone));
