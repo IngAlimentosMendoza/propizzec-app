@@ -276,6 +276,61 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .field-row .field{flex:1 1 160px;min-width:0;}
 .modal-actions{display:flex;gap:10px;margin-top:18px;}
 .modal-actions .btn{flex:1;}
+/* ===== Sistema visual de ventanas emergentes =====
+   - Franja de color según el módulo (los mismos colores del menú lateral).
+   - .sec  : tarjeta por sección con barra de color (formularios largos).
+   - .paso : pasos numerados (flujos que se llenan en orden).
+   - .mhead / .mfoot : encabezado de color y barra inferior fija (selectores). */
+.modal-panel{--mc:#64748B;--mt:#F1F5F9;--md:#334155;box-shadow:inset 0 4px 0 var(--mc);}
+.modal-panel[data-mod=inventario]{--mc:#D97706;--mt:#FFFBEB;--md:#92400E;}
+.modal-panel[data-mod=planificacion]{--mc:#059669;--mt:#ECFDF5;--md:#065F46;}
+.modal-panel[data-mod=etiquetado],.modal-panel[data-mod=bodega]{--mc:#4F46E5;--mt:#EEF2FF;--md:#3730A3;}
+.modal-panel[data-mod=monitoreo],.modal-panel[data-mod=indicadores]{--mc:#2563EB;--mt:#EFF6FF;--md:#1E40AF;}
+.modal-panel[data-mod=calidad]{--mc:#7C3AED;--mt:#F5F3FF;--md:#5B21B6;}
+.modal-panel[data-mod=entregas],.modal-panel[data-mod=despacho]{--mc:#DB2777;--mt:#FDF2F8;--md:#9D174D;}
+.modal-panel[data-mod=sellado]{--mc:#0D9488;--mt:#F0FDFA;--md:#115E59;}
+.mhead{margin:-20px -18px 16px;padding:18px 54px 14px 18px;background:var(--mc);color:#fff;border-radius:16px 16px 0 0;}
+.mhead .sup{display:block;font-size:11px;font-weight:600;letter-spacing:.3px;text-transform:uppercase;color:rgba(255,255,255,.82);}
+.mhead h3{color:#fff;margin:2px 0 0;font-size:18px;padding-right:0;}
+.mhead .msub{color:rgba(255,255,255,.9);margin:3px 0 0;font-size:12.5px;}
+.modal-panel:has(.mhead) .mclose{background:rgba(255,255,255,.24);color:#fff;}
+.sec{--sc:#2563EB;--st:#EFF6FF;--sd:#1E40AF;position:relative;border:1px solid var(--line);border-radius:12px;overflow:hidden;margin-bottom:12px;background:#fff;}
+.sec::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--sc);}
+.sec.verde{--sc:#059669;--st:#ECFDF5;--sd:#065F46;}
+.sec.ambar{--sc:#D97706;--st:#FFFBEB;--sd:#92400E;}
+.sec.rojo{--sc:#DC2626;--st:#FEF2F2;--sd:#991B1B;}
+.sec.morado{--sc:#7C3AED;--st:#F5F3FF;--sd:#5B21B6;}
+.sec.turquesa{--sc:#0D9488;--st:#F0FDFA;--sd:#115E59;}
+.sec.gris{--sc:#64748B;--st:#F1F5F9;--sd:#334155;}
+.sec-h{display:flex;align-items:center;gap:8px;padding:9px 12px 9px 16px;background:var(--st);color:var(--sd);font-size:12.5px;font-weight:700;}
+.sec-h .sec-x{margin-left:auto;font-size:11.5px;font-weight:600;}
+.sec-n{width:20px;height:20px;border-radius:50%;background:var(--sc);color:#fff;font-size:11px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;}
+.sec-b{padding:12px 12px 2px 16px;}
+.sec-b>.field:last-child,.sec-b>.pf-row:last-child>.field{margin-bottom:10px;}
+.sec input:not([type=checkbox]):not([type=radio]):not(:disabled):focus,.sec select:not(:disabled):focus,.sec textarea:not(:disabled):focus{outline:none;border-color:var(--sc);box-shadow:0 0 0 3px color-mix(in srgb,var(--sc) 20%,transparent);}
+.modal-panel div[style*="display:flex"]>input[type=time],.modal-panel div[style*="display:flex"]>input[type=date]{width:auto;min-width:0;flex:1 1 0;padding-left:8px;padding-right:4px;font-size:13px;}
+.modal-panel input[type=number]{box-sizing:border-box;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-family:inherit;background:#fff;color:var(--ink);}
+.modal-panel input[type=date],.modal-panel input[type=time]{width:100%;box-sizing:border-box;padding:10px 12px;min-height:46px;border:1.5px solid var(--line);border-radius:10px;font-size:15px;font-family:inherit;background:#fff;color:var(--ink);}
+.paso{display:flex;gap:12px;--pc:#2563EB;--pt:#EFF6FF;--pd:#1E40AF;}
+.paso.verde{--pc:#059669;--pt:#ECFDF5;--pd:#065F46;}
+.paso.ambar{--pc:#D97706;--pt:#FFFBEB;--pd:#92400E;}
+.paso-rail{display:flex;flex-direction:column;align-items:center;flex:0 0 26px;}
+.paso-c{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;background:#F1F5F9;color:#94A3B8;border:2px solid transparent;box-sizing:border-box;}
+.paso-l{flex:1;width:2px;background:var(--line);margin:4px 0;}
+.paso:last-child .paso-l{display:none;}
+.paso-body{flex:1;min-width:0;padding-bottom:14px;}
+.paso-tit{font-size:13px;font-weight:700;margin:3px 0 8px;color:#94A3B8;}
+.paso-hint{font-size:12px;color:#94A3B8;margin:-4px 0 0;}
+.paso.activo .paso-c{background:var(--pc);color:#fff;}
+.paso.activo .paso-tit,.paso.hecho .paso-tit{color:var(--pd);}
+.paso.hecho .paso-c{background:var(--pt);color:var(--pd);border-color:var(--pc);}
+.paso.bloqueado .paso-cuerpo{display:none;}
+.paso.activo .paso-hint,.paso.hecho .paso-hint{display:none;}
+.modal-panel .btn.primary{--accent:var(--mc) !important;}
+.modal-panel .modal-actions{position:sticky;bottom:0;z-index:3;margin:18px -18px -24px;padding:12px 18px 16px;background:#fff;border-top:1px solid var(--line);}
+.modal-panel .mfoot{position:sticky;bottom:0;z-index:3;margin:14px -18px -24px;padding:10px 18px 16px;background:#fff;border-top:1px solid var(--line);}
+.modal-panel .mfoot .lote-remain{margin:0 0 10px;}
+.modal-panel .mfoot .modal-actions{position:static;margin:0;padding:0;border:none;}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-top:1px solid var(--line);margin-top:4px;}
 .toggle-row span{font-size:13px;font-weight:600;}
 .switch{position:relative;width:42px;height:24px;flex:0 0 auto;}
@@ -376,6 +431,14 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
 .lote-remain{margin-top:10px;padding:12px;background:#F5F4F0;border-radius:10px;font-size:13px;display:flex;justify-content:space-between;font-weight:700;}
 .lote-remain.warn{color:var(--danger);}
 .lote-remain.ok{color:var(--ok);}
+.lote-tabs{display:flex;gap:6px;margin:10px 0 8px;}
+.lote-tab{flex:1;height:38px;border:1px solid var(--line);background:#fff;border-radius:10px;font-size:13px;font-weight:600;color:var(--muted);}
+.lote-tab.active{background:var(--produccion);color:#fff;border-color:var(--produccion);}
+.lote-row .lm span.lote-disp{display:block;font-weight:600;color:var(--ink);margin-top:2px;}
+.lote-exacto{display:flex;gap:6px;align-items:center;}
+.lote-exacto input{width:92px;height:38px;box-sizing:border-box;text-align:right;font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;}
+.lote-exacto .btn{height:38px;padding:0 10px;font-size:12px;}
+.lote-remain{gap:8px;flex-wrap:wrap;}
 
 /* ============ PARADAS / TIMER ============ */
 .timer-box{background:var(--ink);color:#fff;border-radius:14px;padding:20px;text-align:center;margin-bottom:14px;}
@@ -660,7 +723,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-3</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.03-7</div>
     </div>
   </nav>
 
@@ -3208,6 +3271,7 @@ function openModal(html, onClose){
     modalStack.push({ html: panel.innerHTML, hook: currentModalHook });
   }
   currentModalHook = onClose || null;
+  document.getElementById('modalPanel').setAttribute('data-mod', currentModule || '');
   document.getElementById('modalPanel').innerHTML = `<button class="mclose" onclick="closeModal()">✕</button>${html}`;
   bg.classList.add('show');
   // Cada ventana que se abre (incluidas las anidadas) queda registrada como
@@ -3589,9 +3653,8 @@ async function openAjusteModal(codigo){
     if(m.fecha_caducidad && !fechasPorLote[m.lote].cad) fechasPorLote[m.lote].cad = m.fecha_caducidad;
   });
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(nombre)}</h3>
-    <div class="msub" style="font-weight:700;color:var(--ink);">Ajuste N° ${nAjuste}</div>
+    <div class="mhead"><span class="sup">${escHtml(codigo)}</span><h3>${escHtml(nombre)}</h3><div class="msub">Ajuste N° ${nAjuste}</div></div>
+    <div class="sec azul"><div class="sec-h">Lote a ajustar</div><div class="sec-b">
     <div class="field"><label>Fecha de ingreso de información</label><input type="date" value="${todayISO()}" disabled></div>
     <div class="field"><label>Lote a ajustar</label>
       ${sinLote ? `
@@ -3609,6 +3672,8 @@ async function openAjusteModal(codigo){
       </div>
       `}
     </div>
+    </div></div>
+    <div class="sec ambar"><div class="sec-h">Motivo y cantidad</div><div class="sec-b">
     <div class="field"><label>Motivo</label><input type="text" id="ajMotivo" placeholder="Ej: Exceso de materia prima"></div>
 
     <div class="field-row" style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;">
@@ -3622,16 +3687,19 @@ async function openAjusteModal(codigo){
       </div>
     </div>
 
+    </div></div>
+
     ${sinLote ? '' : `
-    <div class="msub" style="margin-top:16px;font-weight:700;color:var(--ink);">Fechas del lote</div>
+    <div class="sec turquesa"><div class="sec-h">Fechas del lote</div><div class="sec-b">
     <div class="sub" style="margin-bottom:8px;">Al elegir el lote se cargan las fechas con las que fue ingresado, para que las verifiques o las corrijas. Si las cambias, se actualizan en todos los movimientos de ese lote.</div>
     <div class="field-row" style="display:flex;flex-wrap:wrap;gap:10px;">
       <div class="field" style="flex:1 1 140px;min-width:0;"><label>Fecha de elaboración</label><input type="date" id="ajFechaElab"></div>
       <div class="field" style="flex:1 1 140px;min-width:0;"><label>Fecha de caducidad</label><input type="date" id="ajFechaCad"></div>
     </div>
+    </div></div>
     `}
 
-    <button class="btn primary" style="--accent:var(--personal);width:100%;" onclick="guardarAjuste('${escHtml(codigo)}', ${nAjuste})">Guardar ajuste</button>
+    <div class="modal-actions"><button class="btn primary" style="--accent:var(--personal);" onclick="guardarAjuste('${escHtml(codigo)}', ${nAjuste})">Guardar ajuste</button></div>
   `);
 }
 function ajLoteChanged(){
@@ -3847,8 +3915,8 @@ function openItemForm(codigo){
   const presMedidaOptions = medidas.map(m=>`<option value="${escHtml(m.nombre)}" ${item ? (item.presentacion_medida===m.nombre?'selected':'') : (m.nombre==='KILOGRAMOS'?'selected':'')}>${escHtml(m.nombre)}</option>`).join('');
 
   openModal(`
-    <h3>${editing ? 'Editar ítem' : 'Agregar ítem'}</h3>
-    <div class="msub">${editing ? escHtml(codigo) : 'Se generará un código automático según el tipo'}</div>
+    <div class="mhead"><span class="sup">Inventario · Items</span><h3>${editing ? 'Editar ítem' : 'Agregar ítem'}</h3><div class="msub">${editing ? escHtml(codigo) : 'Se generará un código automático según el tipo'}</div></div>
+    <div class="sec azul"><div class="sec-h">Identificación</div><div class="sec-b">
     <div class="field">
       <label>Tipo</label>
       <select id="fTipo" ${editing?'disabled':''} onchange="updateCodePreview()">${tipoOptions}</select>
@@ -3861,6 +3929,8 @@ function openItemForm(codigo){
       <label>Nombre del ítem</label>
       <input type="text" id="fNombre" value="${item ? escHtml(item.nombre) : ''}" placeholder="Ej: QUESO MOZZARELLA">
     </div>
+    </div></div>
+    <div class="sec turquesa"><div class="sec-h">Medidas y presentación</div><div class="sec-b">
     <div class="field">
       <label>Medida</label>
       <select id="fMedida">${medidaOptions}</select>
@@ -3875,6 +3945,8 @@ function openItemForm(codigo){
         <select id="fPresMedida">${presMedidaOptions}</select>
       </div>
     </div>
+    </div></div>
+    <div class="sec gris"><div class="sec-h">Opciones del ítem</div><div class="sec-b">
     ${editing ? `
     <div class="toggle-row">
       <span>Ítem activo</span>
@@ -3895,6 +3967,7 @@ function openItemForm(codigo){
       <label class="switch"><input type="checkbox" id="fEsExtraCronograma" ${item && item.es_extra_cronograma?'checked':''}><span class="slider"></span></label>
     </div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Actívalo si este material de empaque se consume directo en Cronograma junto con la Materia Prima, sin pasar por Etiquetado.</div>
+    </div></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--personal)" onclick="saveItemForm(${editing?`'${escHtml(codigo)}'`:'null'})">Guardar</button>
@@ -4120,8 +4193,7 @@ function renderFormulacionModal(){
   const pctClass = Math.abs(totalIng-totalPres) < 0.001 ? 'ok' : '';
 
   openModal(`
-    <h3>${formProducto ? escHtml(formProducto.nombre) : 'Agregar / Editar Formulación'}</h3>
-    <div class="msub">${formProducto ? escHtml(formProducto.codigo) : 'Primero busca y selecciona el producto principal'}</div>
+    <div class="mhead"><span class="sup">Inventario · Formulación</span><h3>${formProducto ? escHtml(formProducto.nombre) : 'Agregar / Editar Formulación'}</h3><div class="msub">${formProducto ? escHtml(formProducto.codigo) : 'Primero busca y selecciona el producto principal'}</div></div>
 
     <div id="fmProductPicker" style="${formProducto?'display:none':''}">
       <div class="field">
@@ -4132,6 +4204,7 @@ function renderFormulacionModal(){
     </div>
 
     <div id="fmProductBody" style="${formProducto?'':'display:none'}">
+      <div class="sec azul"><div class="sec-h">Presentación</div><div class="sec-b">
       <div class="field-row">
         <div class="field">
           <label>Presentación (cantidad total = 100%)</label>
@@ -4143,6 +4216,9 @@ function renderFormulacionModal(){
         </div>
       </div>
 
+      </div></div>
+
+      <div class="sec verde"><div class="sec-h">Ingredientes</div><div class="sec-b">
       <div class="field">
         <label>Buscar ingrediente para añadir</label>
         <input type="text" id="fmIngSearch" placeholder="Buscar por código o nombre…" oninput="fmSearchIngredients(this.value)">
@@ -4154,6 +4230,7 @@ function renderFormulacionModal(){
         <div id="fmIngList"></div>
         <div class="pct-total ${pctClass}" id="fmPctTotal">Total: ${fmtNum(totalIng)} / ${fmtNum(totalPres)} (${totalPres?fmtNum(totalIng/totalPres*100):'0,00'}%)</div>
       </div>
+      </div></div>
 
       <div class="modal-actions">
         <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -5133,30 +5210,34 @@ function openCronogramaFormBloqueado(row, item, motivoDespacho){
   });
   const personal = Object.values(personalPorNombre);
   openModal(`
-    <div class="op-head">
-      <div class="field"><label>Fecha</label><input type="text" value="${escHtml(row.fecha)}" disabled></div>
-      <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
+    <div class="mhead">
+      <span class="sup">Orden de producción</span>
+      <h3>${escHtml(row.orden_produccion||'—')}</h3>
+      <div class="msub">${escHtml(row.item_codigo)} — ${escHtml(item?item.nombre:row.item_codigo)}</div>
     </div>
     <div class="readonly-box" style="margin-bottom:14px;background:rgba(5,150,105,.08);border-color:var(--ok);">
       🔒 ${motivoDespacho ? ('<b>'+escHtml(motivoDespacho)+'</b>') : '<b>Esta orden ya fue verificada y aprobada en Monitoreo.</b> Para corregir algo, primero hay que usar "↩ Volver a verificar" desde Monitoreo.'}
     </div>
-    <div class="pf-row">
-      <div class="field"><label>${escHtml(row.item_codigo)} — Producto</label><input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled></div>
-    </div>
+    <div class="sec azul"><div class="sec-h">Datos de la producción</div><div class="sec-b">
+    <div class="field"><label>Fecha</label><input type="text" value="${escHtml(row.fecha)}" disabled></div>
     <div class="field-row">
       <div class="field"><label>Lote</label><input type="text" value="${escHtml(row.lote||'')}" disabled></div>
       <div class="field"><label>Cantidad</label><input type="text" value="${fmtRaw(cant)}" disabled></div>
     </div>
+    </div></div>
+    <div class="sec turquesa"><div class="sec-h">Horas y responsable</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Hora de inicio</label><input type="text" value="${row.hora_inicio?new Date(row.hora_inicio).toTimeString().slice(0,5):''}" disabled></div>
       <div class="field"><label>Hora de fin</label><input type="text" value="${row.hora_fin?new Date(row.hora_fin).toTimeString().slice(0,5):''}" disabled></div>
     </div>
     <div class="field"><label>Responsable</label><input type="text" value="${escHtml(row.responsable||'')}" disabled></div>
-    ${row.motivo_merma ? `<div class="field-row">
+    </div></div>
+    ${row.motivo_merma ? `<div class="sec morado"><div class="sec-h">Merma</div><div class="sec-b"><div class="field-row">
       <div class="field"><label>Motivo de merma</label><input type="text" value="${escHtml(row.motivo_merma)}" disabled></div>
       <div class="field"><label>Merma</label><input type="text" value="${fmtRaw(row.merma_proceso||0)} ${escHtml(row.merma_medida||'')}" disabled></div>
-    </div>` : ''}
+    </div></div></div>` : ''}
 
+    <div class="sec verde"><div class="sec-h">Ingredientes</div><div class="sec-b">
     <div class="field"><label>Ingredientes (formulación)</label>
       ${ingredientes.length ? ingredientes.map(ci=>{
         const ciItem = (cacheItems||[]).find(i=>i.codigo===ci.item_codigo);
@@ -5166,9 +5247,12 @@ function openCronogramaFormBloqueado(row, item, motivoDespacho){
         </div>`;
       }).join('') : '<div class="empty-state">Sin ingredientes</div>'}
     </div>
+    </div></div>
+    <div class="sec ambar"><div class="sec-h">Personal</div><div class="sec-b">
     <div class="field"><label>Personal (${personal.length})</label>
       ${personal.length ? personal.map(p=>`<div class="reg-row"><div class="rmain"><span class="big">${escHtml(p.nombre)}</span></div><div class="rval"><span class="sup">${escHtml(p.ingreso||'')}${p.salida?(' – '+escHtml(p.salida)):''}</span></div></div>`).join('') : '<div class="empty-state">Sin personal registrado</div>'}
     </div>
+    </div></div>
 
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
@@ -5221,113 +5305,139 @@ function openCronogramaFormNormal(id){
   const ingredientes = (row.cronograma_ingredientes||[]).slice();
 
   openModal(`
-    <div class="op-head">
-      <div class="field">
-        <label>Fecha</label>
-        <input type="date" id="pfFecha" value="${escHtml(row.fecha)}" onchange="planUpdateField('${id}','fecha',this.value)">
-      </div>
-      <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
-    </div>
-    <div class="pf-row">
-      <div class="field">
-        <label>Cantidad<span style="text-transform:none;color:var(--muted);"> (real producida)</span></label>
-        <input type="text" inputmode="decimal" id="pfCantidad" value="${fmtRaw(cant)}" onchange="crActualizarCantidadReal('${id}', this.value)">
-      </div>
-    </div>
-    <div class="pf-row">
-      <div class="field">
-        <label>${escHtml(row.item_codigo)} — Producto</label>
-        <input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled>
-      </div>
-      <div class="field">
-        <label>Lote</label>
-        <input type="text" id="pfLote" value="${escHtml(lote)}" onchange="planUpdateField('${id}','lote',this.value)">
-      </div>
+    <div class="mhead">
+      <span class="sup">Orden de producción</span>
+      <h3>${escHtml(row.orden_produccion||'—')}</h3>
+      <div class="msub">${escHtml(row.item_codigo)} — ${escHtml(item?item.nombre:row.item_codigo)}</div>
     </div>
 
-    <div class="section-title">Personal y horas</div>
-    <div class="pf-row">
-      <div class="field">
-        <label>Hora de inicio</label>
-        <div style="display:flex;gap:8px;">
-          <input type="time" id="pfHoraInicio" value="${row.hora_inicio||''}" onchange="crActualizarCampoCompartido('${id}','hora_inicio',this.value)" style="flex:1;">
-          <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_inicio')">Inicio</button>
+    <div class="sec azul">
+      <div class="sec-h">Datos de la producción</div>
+      <div class="sec-b">
+        <div class="pf-row">
+          <div class="field">
+            <label>Fecha</label>
+            <input type="date" id="pfFecha" value="${escHtml(row.fecha)}" onchange="planUpdateField('${id}','fecha',this.value)">
+          </div>
+          <div class="field">
+            <label>Lote</label>
+            <input type="text" id="pfLote" value="${escHtml(lote)}" onchange="planUpdateField('${id}','lote',this.value)">
+          </div>
         </div>
-      </div>
-      <div class="field">
-        <label>Hora de fin</label>
-        <div style="display:flex;gap:8px;">
-          <input type="time" id="pfHoraFin" value="${row.hora_fin||''}" onchange="crActualizarCampoCompartido('${id}','hora_fin',this.value)" style="flex:1;">
-          <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_fin')">Fin</button>
+        <div class="pf-row">
+          <div class="field">
+            <label>Cantidad<span style="text-transform:none;color:var(--muted);"> (real producida)</span></label>
+            <input type="text" inputmode="decimal" id="pfCantidad" value="${fmtRaw(cant)}" onchange="crActualizarCantidadReal('${id}', this.value)">
+          </div>
         </div>
       </div>
     </div>
-    <div class="pf-row">
-      <div class="field">
-        <label>Personal (conteo presente)</label>
-        <input type="text" id="pfPersonalCount" value="${(row.cronograma_personal||[]).filter(p=>!p.hora_salida).length}" disabled>
-      </div>
-      <div class="field" style="display:flex;align-items:flex-end;">
-        <button class="btn" type="button" style="width:100%;" onclick="openPersonalModal('${id}','cronograma')">👥 Personal</button>
-      </div>
-    </div>
 
-    <div class="field">
-      <label>Agregar otro ingrediente</label>
-      <input type="text" id="pfIngSearch" placeholder="Buscar por código o nombre…" oninput="crIngSearchInput('${id}', this.value)">
-      <div class="search-results" id="pfIngResults"></div>
-    </div>
-    <div class="field">
-      <label>Ingredientes (formulación)</label>
-      <div id="pfIngList"></div>
-    </div>
-
-    <div class="pf-row">
-      <div class="field">
-        <label>Motivo de la merma</label>
-        <select id="pfMotivoMerma" onchange="planUpdateField('${id}','motivo_merma',this.value)">
-          <option value="">Selecciona…</option>
-          ${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='motivo_merma').map(c=>`<option value="${escHtml(c.nombre)}" ${row.motivo_merma===c.nombre?'selected':''}>${escHtml(c.nombre)}</option>`).join('')}
-        </select>
-        <div class="inline-add" style="margin-top:8px;">
-          <input type="text" id="pfMotivoMermaNuevo" placeholder="Escribir nuevo motivo…">
-          <button class="btn" onclick="pfAddMotivoMerma('${id}')">+ Añadir</button>
+    <div class="sec turquesa">
+      <div class="sec-h">Personal y horas</div>
+      <div class="sec-b">
+        <div class="pf-row">
+          <div class="field">
+            <label>Hora de inicio</label>
+            <div style="display:flex;gap:8px;">
+              <input type="time" id="pfHoraInicio" value="${row.hora_inicio||''}" onchange="crActualizarCampoCompartido('${id}','hora_inicio',this.value)" style="flex:1;">
+              <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_inicio')">Inicio</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>Hora de fin</label>
+            <div style="display:flex;gap:8px;">
+              <input type="time" id="pfHoraFin" value="${row.hora_fin||''}" onchange="crActualizarCampoCompartido('${id}','hora_fin',this.value)" style="flex:1;">
+              <button class="btn ghost" type="button" onclick="crMarcarHora('${id}','hora_fin')">Fin</button>
+            </div>
+          </div>
+        </div>
+        <div class="pf-row">
+          <div class="field">
+            <label>Personal (conteo presente)</label>
+            <input type="text" id="pfPersonalCount" value="${(row.cronograma_personal||[]).filter(p=>!p.hora_salida).length}" disabled>
+          </div>
+          <div class="field" style="display:flex;align-items:flex-end;">
+            <button class="btn" type="button" style="width:100%;" onclick="openPersonalModal('${id}','cronograma')">👥 Personal</button>
+          </div>
         </div>
       </div>
     </div>
-    <div class="pf-row">
-      <div class="field">
-        <label>Merma de proceso</label>
-        <input type="text" inputmode="decimal" id="pfMerma" value="${fmtRaw(row.merma_proceso||0)}" onchange="planUpdateField('${id}','merma_proceso',parseFloat((this.value||'0').replace(',','.')))">
-      </div>
-      <div class="field">
-        <label>Medida</label>
-        <select id="pfMermaMedida" onchange="planUpdateField('${id}','merma_medida',this.value)">${mermaMedidaOptions}</select>
-      </div>
-    </div>
-    <div class="pf-row">
-      <div class="field">
-        <label>Cantidad rechazada<span style="text-transform:none;"> (${escHtml(item?item.medida:'')})</span></label>
-        <input type="text" inputmode="decimal" id="pfRech" value="${fmtRaw(row.unid_rechazadas_calidad||0)}" onchange="planUpdateRechazoReproceso('${id}')">
-      </div>
-      <div class="field">
-        <label>Cantidad reprocesada<span style="text-transform:none;"> (${escHtml(item?item.medida:'')})</span></label>
-        <input type="text" inputmode="decimal" id="pfRepro" value="${fmtRaw(row.unid_reprocesadas||0)}" onchange="planUpdateRechazoReproceso('${id}')">
+
+    <div class="sec verde">
+      <div class="sec-h">Ingredientes</div>
+      <div class="sec-b">
+        <div class="field">
+          <label>Agregar otro ingrediente</label>
+          <input type="text" id="pfIngSearch" placeholder="Buscar por código o nombre…" oninput="crIngSearchInput('${id}', this.value)">
+          <div class="search-results" id="pfIngResults"></div>
+        </div>
+        <div class="field">
+          <label>Ingredientes (formulación)</label>
+          <div id="pfIngList"></div>
+        </div>
       </div>
     </div>
 
-    <div class="section-title">Paradas de esta orden</div>
-    <div id="pfParadasBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-
-    <div class="field">
-      <label>Observaciones</label>
-      <textarea id="pfObservaciones" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;" onchange="planUpdateField('${id}','observaciones',this.value)">${escHtml(row.observaciones||'')}</textarea>
+    <div class="sec morado">
+      <div class="sec-h">Mermas y rechazos</div>
+      <div class="sec-b">
+        <div class="pf-row">
+          <div class="field">
+            <label>Motivo de la merma</label>
+            <select id="pfMotivoMerma" onchange="planUpdateField('${id}','motivo_merma',this.value)">
+              <option value="">Selecciona…</option>
+              ${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='motivo_merma').map(c=>`<option value="${escHtml(c.nombre)}" ${row.motivo_merma===c.nombre?'selected':''}>${escHtml(c.nombre)}</option>`).join('')}
+            </select>
+            <div class="inline-add" style="margin-top:8px;">
+              <input type="text" id="pfMotivoMermaNuevo" placeholder="Escribir nuevo motivo…">
+              <button class="btn" onclick="pfAddMotivoMerma('${id}')">+ Añadir</button>
+            </div>
+          </div>
+        </div>
+        <div class="pf-row">
+          <div class="field">
+            <label>Merma de proceso</label>
+            <input type="text" inputmode="decimal" id="pfMerma" value="${fmtRaw(row.merma_proceso||0)}" onchange="planUpdateField('${id}','merma_proceso',parseFloat((this.value||'0').replace(',','.')))">
+          </div>
+          <div class="field">
+            <label>Medida</label>
+            <select id="pfMermaMedida" onchange="planUpdateField('${id}','merma_medida',this.value)">${mermaMedidaOptions}</select>
+          </div>
+        </div>
+        <div class="pf-row">
+          <div class="field">
+            <label>Cantidad rechazada<span style="text-transform:none;"> (${escHtml(item?item.medida:'')})</span></label>
+            <input type="text" inputmode="decimal" id="pfRech" value="${fmtRaw(row.unid_rechazadas_calidad||0)}" onchange="planUpdateRechazoReproceso('${id}')">
+          </div>
+          <div class="field">
+            <label>Cantidad reprocesada<span style="text-transform:none;"> (${escHtml(item?item.medida:'')})</span></label>
+            <input type="text" inputmode="decimal" id="pfRepro" value="${fmtRaw(row.unid_reprocesadas||0)}" onchange="planUpdateRechazoReproceso('${id}')">
+          </div>
+        </div>
+      </div>
     </div>
 
-    <div class="field">
-      <label>Responsable de la producción</label>
-      <input type="text" id="pfResponsable" list="pfResponsableList" value="${escHtml(row.responsable||'')}" placeholder="Escribe o selecciona…" onchange="planPickResponsable('${id}', this.value)">
-      <datalist id="pfResponsableList">${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp').map(c=>`<option value="${escHtml(c.nombre)}">`).join('')}</datalist>
+    <div class="sec rojo">
+      <div class="sec-h">Paradas de esta orden</div>
+      <div class="sec-b">
+        <div id="pfParadasBody"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
+      </div>
+    </div>
+
+    <div class="sec ambar">
+      <div class="sec-h">Cierre</div>
+      <div class="sec-b">
+        <div class="field">
+          <label>Observaciones</label>
+          <textarea id="pfObservaciones" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;box-sizing:border-box;" onchange="planUpdateField('${id}','observaciones',this.value)">${escHtml(row.observaciones||'')}</textarea>
+        </div>
+        <div class="field">
+          <label>Responsable de la producción</label>
+          <input type="text" id="pfResponsable" list="pfResponsableList" value="${escHtml(row.responsable||'')}" placeholder="Escribe o selecciona…" onchange="planPickResponsable('${id}', this.value)">
+          <datalist id="pfResponsableList">${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp').map(c=>`<option value="${escHtml(c.nombre)}">`).join('')}</datalist>
+        </div>
+      </div>
     </div>
 
     <div class="modal-actions">
@@ -5777,36 +5887,79 @@ async function openLotePicker(cronogramaIngId){
   const ci = row.cronograma_ingredientes.find(x=>x.id===cronogramaIngId);
   const item = (cacheItems||[]).find(i=>i.codigo===ci.item_codigo);
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(ci.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(item?item.nombre:ci.item_codigo)}</h3>
-    <div class="msub">Selecciona el o los lotes a consumir</div>
+    <div class="mhead"><span class="sup">${escHtml(ci.item_codigo)}</span><h3>${escHtml(item?item.nombre:ci.item_codigo)}</h3><div class="msub">Ingrediente a consumir</div></div>
+    <div class="lote-tabs">
+      <button class="lote-tab active" id="loteTabAuto" onclick="loteCambiarModo('auto')">Elegir lotes</button>
+      <button class="lote-tab" id="loteTabExacto" onclick="loteCambiarModo('exacto')">Cantidad exacta</button>
+    </div>
+    <div class="msub" id="loteAyuda">Selecciona el o los lotes a consumir</div>
     <div id="loteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-    <div class="lote-remain" id="loteRemain"></div>
+    <div class="mfoot"><div class="lote-remain" id="loteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--produccion)" onclick="confirmLotes('${cronogramaIngId}')">Confirmar</button>
-    </div>
+    </div></div>
   `);
   const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', ci.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('loteList');
   if(error){ listEl.innerHTML = '<div class="empty-state">No se pudo cargar</div>'; return; }
-  const data = await filtrarLotesDisponibles(ci.item_codigo, dataRaw);
-  const previamente = new Set((ci.lotes_consumidos||[]).map(l=>l.lote));
-  loteConsumo = { total: Number(ci.cantidad_consumida||0), seleccion:{}, disponibles: data||[] };
+  const data = (await filtrarLotesDisponibles(ci.item_codigo, dataRaw)) || [];
+  // Lo que ESTE ingrediente ya tenía descontado de cada lote: ese descuento se
+  // deshace y se vuelve a hacer al confirmar, así que cuenta como disponible
+  // para volver a elegirlo (si no, un lote que se consumió completo desaparecería
+  // de la lista al reabrir).
+  const previo = {};
+  (ci.lotes_consumidos||[]).forEach(l=>{ previo[l.lote] = (previo[l.lote]||0) + Number(l.cantidad||0); });
+  const lista = data.map(l=>({ ...l, _max: Math.round((Number(l.cantidad_disponible||0) + (previo[l.lote]||0))*10000)/10000 }));
+  Object.keys(previo).forEach(lote=>{
+    if(!lista.some(l=>l.lote===lote)) lista.push({ lote, cantidad_disponible:0, fecha_ingreso:null, fecha_caducidad:null, _max: previo[lote] });
+  });
+  loteConsumo = { total: Number(ci.cantidad_consumida||0), seleccion:{}, disponibles: lista, modo:'auto', medida: item?item.medida:'' };
   (ci.lotes_consumidos||[]).forEach(l=>{ loteConsumo.seleccion[l.lote] = l.cantidad; });
-  if(!data || !data.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles registrados en Kardex</div>'; }
-  else{
-    listEl.innerHTML = data.map(l=>`
+  loteRenderLista();
+}
+let loteConsumo = { total:0, seleccion:{}, disponibles:[], modo:'auto', medida:'' };
+function loteFechaTxt(l){
+  return 'Ingreso ' + (l.fecha_ingreso?l.fecha_ingreso.split('-').reverse().join('/'):'—') + (l.fecha_caducidad?(' · Caduca '+l.fecha_caducidad.split('-').reverse().join('/')):'');
+}
+function loteCambiarModo(modo){
+  loteConsumo.modo = modo;
+  const a = document.getElementById('loteTabAuto'), e = document.getElementById('loteTabExacto');
+  if(a) a.classList.toggle('active', modo==='auto');
+  if(e) e.classList.toggle('active', modo==='exacto');
+  loteRenderLista();
+}
+function loteRenderLista(){
+  const listEl = document.getElementById('loteList');
+  if(!listEl) return;
+  const ayuda = document.getElementById('loteAyuda');
+  const lista = loteConsumo.disponibles;
+  if(ayuda) ayuda.textContent = loteConsumo.modo==='auto'
+    ? 'Selecciona el o los lotes'
+    : 'Escribe la cantidad exacta de cada lote. La suma debe dar ' + (loteConsumo.textoSuma||'lo que se consume') + '.';
+  if(!lista.length){ listEl.innerHTML = '<div class="empty-state">Sin lotes disponibles registrados en Kardex</div>'; loteRecalc(); return; }
+  if(loteConsumo.requiereTotal && !(loteConsumo.total>0)){ listEl.innerHTML = '<div class="empty-state">Ingresa primero la cantidad para poder elegir el lote</div>'; loteRecalc(); return; }
+  if(loteConsumo.modo==='auto'){
+    listEl.innerHTML = lista.map(l=>`
       <div class="lote-row">
-        <input type="checkbox" ${previamente.has(l.lote)?'checked':''} onchange="toggleLote('${escHtml(l.lote)}', ${l.cantidad_disponible}, this.checked)">
-        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>Ingreso ${l.fecha_ingreso?l.fecha_ingreso.split('-').reverse().join('/'):'—'}${l.fecha_caducidad?(' · Caduca '+l.fecha_caducidad.split('-').reverse().join('/')):''}</span></div>
-        <div class="lq">${fmtNum(l.cantidad_disponible)} ${escHtml(item?item.medida:'')}</div>
+        <input type="checkbox" ${(loteConsumo.seleccion[l.lote]>0)?'checked':''} onchange="toggleLote('${escHtml(l.lote)}', ${l._max}, this.checked)">
+        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>${loteFechaTxt(l)}</span></div>
+        <div class="lq">${fmtNum(l._max)} ${escHtml(loteConsumo.medida)}</div>
+      </div>
+    `).join('');
+  } else {
+    listEl.innerHTML = lista.map((l,i)=>`
+      <div class="lote-row">
+        <div class="lm"><b>Lote ${escHtml(l.lote)}</b><span>${loteFechaTxt(l)}</span><span class="lote-disp">Disponible: ${fmtNum(l._max)} ${escHtml(loteConsumo.medida)}</span></div>
+        <div class="lote-exacto">
+          <input type="text" inputmode="decimal" id="loteIn_${i}" placeholder="0" value="${loteConsumo.seleccion[l.lote]>0 ? fmtRaw(loteConsumo.seleccion[l.lote]) : ''}" oninput="loteExactoInput(${i}, this)">
+          <button class="btn ghost" type="button" onclick="loteExactoResto(${i})">Resto</button>
+        </div>
       </div>
     `).join('');
   }
   loteRecalc();
 }
-let loteConsumo = { total:0, seleccion:{}, disponibles:[] };
 function toggleLote(lote, disponible, checked){
   if(checked){
     const yaAsignado = Object.values(loteConsumo.seleccion).reduce((s,v)=>s+v,0);
@@ -5817,14 +5970,48 @@ function toggleLote(lote, disponible, checked){
   }
   loteRecalc();
 }
+// Pestaña "Cantidad exacta": la persona escribe cuánto se usó de cada lote.
+// Nunca se acepta más de lo que hay en ese lote (se corrige al máximo y se avisa).
+function loteExactoInput(i, el){
+  const l = loteConsumo.disponibles[i]; if(!l) return;
+  const txt = String(el.value).replace(',','.').trim();
+  let v = parseFloat(txt);
+  if(isNaN(v) || v<=0){ delete loteConsumo.seleccion[l.lote]; el.classList.remove('lote-exceso'); loteRecalc(); return; }
+  if(v > l._max + 0.0001){
+    v = l._max;
+    el.value = fmtRaw(v);
+    toast('Solo hay ' + fmtNum(l._max) + ' ' + loteConsumo.medida + ' en el lote ' + l.lote);
+  }
+  loteConsumo.seleccion[l.lote] = Math.round(v*10000)/10000;
+  loteRecalc();
+}
+// "Resto": completa ese lote con lo que todavía falta para llegar a la cantidad a consumir.
+function loteExactoResto(i){
+  const l = loteConsumo.disponibles[i]; if(!l) return;
+  const otros = Object.entries(loteConsumo.seleccion).filter(([k])=>k!==l.lote).reduce((s,[,v])=>s+v,0);
+  const falta = Math.max(0, Math.round((loteConsumo.total - otros)*10000)/10000);
+  const v = Math.min(l._max, falta);
+  if(v<=0){ delete loteConsumo.seleccion[l.lote]; } else { loteConsumo.seleccion[l.lote] = v; }
+  const el = document.getElementById('loteIn_'+i);
+  if(el) el.value = v>0 ? fmtRaw(v) : '';
+  loteRecalc();
+}
 function loteRecalc(){
   const asignado = Object.values(loteConsumo.seleccion).reduce((s,v)=>s+v,0);
   const falta = Math.round((loteConsumo.total - asignado)*10000)/10000;
   const remainEl = document.getElementById('loteRemain');
   if(remainEl){
-    remainEl.className = 'lote-remain ' + (falta<=0.001 ? 'ok' : 'warn');
-    remainEl.innerHTML = `<span>A consumir: ${fmtNum(loteConsumo.total)}</span><span>${falta>0.001 ? ('Falta '+fmtNum(falta)) : 'Completo'}</span>`;
+    if(loteConsumo.requiereTotal && !(loteConsumo.total>0)){
+      remainEl.className = 'lote-remain';
+      remainEl.innerHTML = '<span>Ingresa la cantidad para empezar</span>';
+      return;
+    }
+    const ok = Math.abs(falta)<=0.001;
+    remainEl.className = 'lote-remain ' + (ok ? 'ok' : 'warn');
+    const estado = ok ? 'Completo' : (falta>0 ? ('Falta '+fmtNum(falta)) : ('Se pasa por '+fmtNum(-falta)));
+    remainEl.innerHTML = `<span>${escHtml(loteConsumo.etiqueta||'A consumir')}: ${fmtNum(loteConsumo.total)}</span><span>Asignado: ${fmtNum(asignado)}</span><span>${estado}</span>`;
   }
+  if(typeof loteConsumo.onCambio === 'function') loteConsumo.onCambio();
 }
 async function confirmLotes(cronogramaIngId){
   const seleccionados = Object.entries(loteConsumo.seleccion).filter(([,v])=>v>0).map(([lote,cantidad])=>({lote, cantidad}));
@@ -5833,6 +6020,10 @@ async function confirmLotes(cronogramaIngId){
   const falta = Math.round((loteConsumo.total - asignado)*10000)/10000;
   if(falta > 0.001){
     toast('Los lotes elegidos no completan la cantidad a consumir. Falta ' + fmtNum(falta) + '. Elige otro lote o ajusta la cantidad.');
+    return;
+  }
+  if(falta < -0.001){
+    toast('Las cantidades por lote se pasan de lo que se consume por ' + fmtNum(-falta) + '. Ajusta las cantidades.');
     return;
   }
   const { error } = await sb.from('cronograma_ingredientes').update({ lotes_consumidos: seleccionados }).eq('id', cronogramaIngId);
@@ -6240,21 +6431,20 @@ function etiqRenderModal(){
   const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
   const loteVal = EtiqModalState.loteProducto!=null ? EtiqModalState.loteProducto : (row.lote || ddMMyy(row.fecha));
   openModal(`
-    <div class="op-head">
+    <div class="mhead">
+      <span class="sup">Orden de producción</span>
+      <h3>${escHtml(row.orden_produccion||'—')}</h3>
+      <div class="msub">${escHtml(row.item_codigo)} — ${escHtml(item?item.nombre:row.item_codigo)}</div>
+    </div>
+    <div class="sec azul"><div class="sec-h">Lote del producto</div><div class="sec-b">
       <div class="field">
-        <label>Lote del producto</label>
+        <label>Lote</label>
         <input type="text" id="etiqModalLote" value="${escHtml(loteVal)}">
+        <div class="sub" style="margin-top:4px;">Si cambias el lote, se actualiza de inmediato en Planificación/Cronograma.</div>
       </div>
-      <div class="op-badge"><span class="sup">Orden</span><span class="big">${escHtml(row.orden_produccion||'—')}</span></div>
-    </div>
-    <div class="sub" style="margin-top:-6px;margin-bottom:12px;">Si cambias el lote, se actualiza de inmediato en Planificación/Cronograma.</div>
-    <div class="pf-row">
-      <div class="field">
-        <label>${escHtml(row.item_codigo)} — Producto</label>
-        <input type="text" value="${escHtml(item?item.nombre:row.item_codigo)}" disabled>
-      </div>
-    </div>
+    </div></div>
 
+    <div class="sec verde"><div class="sec-h">Material de empaque</div><div class="sec-b">
     <div class="field">
       <label>Agregar otro material de empaque</label>
       <input type="text" id="etiqMeSearchInput" placeholder="Buscar por código o nombre…" oninput="etiqBuscarMeExtra(this.value)">
@@ -6264,7 +6454,9 @@ function etiqRenderModal(){
       <label>Material de Empaque (formulación)</label>
       <div id="etiqMeList"></div>
     </div>
+    </div></div>
 
+    <div class="sec gris"><div class="sec-h">Cierre</div><div class="sec-b">
     <div class="field"><label>Observaciones</label>
       <textarea id="etiqModalObs" rows="2" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">${escHtml(EtiqModalState.observaciones||'')}</textarea>
     </div>
@@ -6278,6 +6470,7 @@ function etiqRenderModal(){
       <input type="text" id="etiqRespNuevo" placeholder="Escribir nuevo responsable…">
       <button class="btn" onclick="etiqAddResponsable()">+ Añadir</button>
     </div>
+    </div></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarModal()">Guardar</button>
@@ -6363,15 +6556,13 @@ async function etiqAbrirLotePicker(idx){
   const cantidad = r.cantidad;
   if(!cantidad || cantidad<=0){ toast('Primero ingresa la cantidad a utilizar'); return; }
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(r.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(r.item_nombre)}</h3>
-    <div class="msub">Selecciona el o los lotes a consumir</div>
+    <div class="mhead"><span class="sup">${escHtml(r.item_codigo)}</span><h3>${escHtml(r.item_nombre)}</h3><div class="msub">Selecciona el o los lotes a consumir</div></div>
     <div id="etiqLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-    <div class="lote-remain" id="etiqLoteRemain"></div>
+    <div class="mfoot"><div class="lote-remain" id="etiqLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--traza)" onclick="etiqConfirmarLotes(${idx})">Confirmar</button>
-    </div>
+    </div></div>
   `);
   const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', r.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('etiqLoteList');
@@ -6858,15 +7049,13 @@ async function despAbrirLotePickerItem(idx){
   if(!f.uxc){ toast('Falta definir "Unidades por caja" para este producto en Configuración → Códigos de Cliente'); return; }
   const cajasNecesarias = Math.floor(Number(f.it.cantidad||0)); // la cantidad del ítem ya viene en cajas — no hay que convertirla
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(f.it.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(f.it.item_nombre)}</h3>
-    <div class="msub">Selecciona el o los lotes a despachar (en cajas)</div>
+    <div class="mhead"><span class="sup">${escHtml(f.it.item_codigo)}</span><h3>${escHtml(f.it.item_nombre)}</h3><div class="msub">Selecciona el o los lotes a despachar (en cajas)</div></div>
     <div id="despLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-    <div class="lote-remain" id="despLoteRemain"></div>
+    <div class="mfoot"><div class="lote-remain" id="despLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmarLotesItem(${idx})">Confirmar</button>
-    </div>
+    </div></div>
   `);
   const { data: lotes, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', f.it.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('despLoteList');
@@ -7704,12 +7893,15 @@ function entRenderFormulario(e, fechaSugerida, colorSugerido){
   EntColorManual = false;
   const esNueva = !e;
   openModal(`
-    <h3>${esNueva?'Nueva entrega':'Editar entrega'}</h3>
+    <div class="mhead"><span class="sup">Entregas</span><h3>${esNueva?'Nueva entrega':'Editar entrega'}</h3><div class="msub">${esNueva?'Puedes cargar el documento de la orden para llenar los datos solo.':'Modifica los datos de esta orden de compra.'}</div></div>
+    <div class="sec turquesa"><div class="sec-h">Documento de la orden de compra</div><div class="sec-b">
     <div class="field">
-      <label>📄 Cargar documento de la Orden de Compra (PDF o TXT, opcional)</label>
+      <label>📄 Cargar documento (PDF o TXT, opcional)</label>
       <input type="file" id="entPdfInput" accept=".pdf,.txt,application/pdf,text/plain" onchange="entCargarPDF(this, ${e?`'${e.id}'`:'null'})">
       <div id="entPdfStatus" class="sub" style="margin-top:4px;"></div>
     </div>
+    </div></div>
+    <div class="sec azul"><div class="sec-h">Cliente y entrega</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Cliente</label><input type="text" id="entCliente" placeholder="Ej: TUTI BODEGA GQUIL NORTE" value="${escHtml(e?e.cliente||'':'')}"></div>
       <div class="field"><label>Color</label><input type="color" id="entColor" value="${escHtml(e?e.color:(colorSugerido||'#2563EB'))}" style="height:42px;padding:4px;" onchange="EntColorManual=true"></div>
@@ -7720,15 +7912,20 @@ function entRenderFormulario(e, fechaSugerida, colorSugerido){
       <div class="field"><label>Hora de entrega</label><input type="time" id="entHoraEntrega" value="${escHtml(e?(e.hora_entrega||'').slice(0,5):'09:00')}"></div>
     </div>
     <div class="field"><label>N° Orden de Compra</label><input type="text" id="entNumeroOC" value="${escHtml(e?e.numero_oc||'':'')}"></div>
+    </div></div>
 
+    <div class="sec verde"><div class="sec-h">Ítems de la orden</div><div class="sec-b">
     <div class="field">
-      <label>Ítems de la orden</label>
+      <label>Agregar producto</label>
       <input type="text" id="entItemSearch" placeholder="Buscar producto para agregar…" oninput="entBuscarItemManual(this.value)">
       <div class="search-results" id="entItemResults"></div>
       <div id="entItemsList" style="margin-top:8px;"></div>
     </div>
+    </div></div>
 
-    <div class="field"><label>Observaciones</label><input type="text" id="entDescripcion" value="${escHtml(e?e.descripcion||'':'')}"></div>
+    <div class="sec gris"><div class="sec-h">Observaciones</div><div class="sec-b">
+    <div class="field"><label>Notas de la entrega</label><input type="text" id="entDescripcion" value="${escHtml(e?e.descripcion||'':'')}"></div>
+    </div></div>
 
     <div class="modal-actions">
       ${esNueva?'':`<button class="btn ghost" onclick="entEliminar('${e.id}')" style="color:var(--danger);">🗑 Eliminar</button>`}
@@ -8081,44 +8278,111 @@ function calCuarBuscarItem(q){
 async function calCuarElegirItem(codigo){
   const item = (cacheItems||[]).find(i=>i.codigo===codigo);
   const dataRaw = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso').then(r=>r.data);
-  const disponibles = await filtrarLotesDisponibles(codigo, dataRaw||[]); // ya descuenta lo que esté en cuarentena
+  const disponibles = (await filtrarLotesDisponibles(codigo, dataRaw||[])) || []; // ya descuenta lo que esté en cuarentena
   const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_calidad');
   const s = document.getElementById('calCuarSearch'); if(s) s.value='';
   const r = document.getElementById('calCuarResults'); if(r) r.innerHTML='';
+  const lista = disponibles.map(l=>({ ...l, _max: Math.round(Number(l.cantidad_disponible||0)*10000)/10000 })).filter(l=>l._max>0);
+  const totalDisp = Math.round(lista.reduce((t,l)=>t+l._max,0)*10000)/10000;
+  const medida = item ? item.medida : '';
+  // Mismo selector de lotes que usa Cronograma, pero aquí primero se indica la cantidad.
+  loteConsumo = { total:0, seleccion:{}, disponibles:lista, modo:'auto', medida, etiqueta:'A poner en cuarentena', textoSuma:'la cantidad a poner en cuarentena', requiereTotal:true, totalDisp };
+  loteConsumo.onCambio = calCuarPasos;
   openModal(`
-    <h3>${escHtml(item?item.nombre:codigo)}</h3>
-    <div class="msub">${escHtml(codigo)}</div>
-    <div class="field"><label>Lote a poner en cuarentena</label>
-      <select id="calCuarLote" onchange="calCuarLoteSeleccionado(this)">
-        <option value="">Selecciona…</option>
-        ${disponibles.map(l=>`<option value="${escHtml(l.lote)}" data-disp="${l.cantidad_disponible}">${escHtml(l.lote)} · disponible ${fmtNum(l.cantidad_disponible)} ${escHtml(item?item.medida:'')}</option>`).join('')}
-      </select>
-      ${!disponibles.length ? '<div class="sub" style="margin-top:4px;">Sin lotes disponibles (o ya están todos en cuarentena)</div>' : ''}
+    <div class="mhead"><span class="sup">${escHtml(codigo)}</span><h3>${escHtml(item?item.nombre:codigo)}</h3><div class="msub">Poner en cuarentena</div></div>
+
+    <div class="paso activo" id="calPaso1">
+      <div class="paso-rail"><div class="paso-c" id="calPasoC1">1</div><div class="paso-l"></div></div>
+      <div class="paso-body">
+        <div class="paso-tit">Cantidad</div>
+        <div class="paso-cuerpo">
+          <div class="field" style="margin-bottom:0;">
+            <input type="text" inputmode="decimal" id="calCuarCantidad" placeholder="Cantidad a poner en cuarentena" autofocus oninput="calCuarCantidadInput(this)">
+            <div class="sub" id="calCuarDispTotal" style="margin-top:4px;">Disponible en total: ${fmtNum(totalDisp)} ${escHtml(medida)}</div>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="field"><label>Cantidad a revisar</label><input type="text" inputmode="decimal" id="calCuarCantidad" placeholder="Elige primero el lote…"></div>
-    <div class="field"><label>Motivo</label><input type="text" id="calCuarMotivo" placeholder="Ej: sospecha de contaminación, revisión pendiente…"></div>
-    <div class="field"><label>Responsable *</label>
-      <select id="calCuarResponsable">
-        <option value="">Selecciona…</option>
-        ${responsables.map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
-      </select>
+
+    <div class="paso verde bloqueado" id="calPaso2">
+      <div class="paso-rail"><div class="paso-c" id="calPasoC2">2</div><div class="paso-l"></div></div>
+      <div class="paso-body">
+        <div class="paso-tit">Lotes</div>
+        <div class="paso-hint">Ingresa primero la cantidad.</div>
+        <div class="paso-cuerpo">
+          <div class="lote-tabs" style="margin-top:0;">
+            <button class="lote-tab active" id="loteTabAuto" onclick="loteCambiarModo('auto')">Elegir lotes</button>
+            <button class="lote-tab" id="loteTabExacto" onclick="loteCambiarModo('exacto')">Cantidad exacta</button>
+          </div>
+          <div class="msub" id="loteAyuda" style="margin-bottom:6px;">Selecciona el o los lotes</div>
+          <div id="loteList"></div>
+        </div>
+      </div>
     </div>
-    <div class="inline-add" style="margin-bottom:14px;">
-      <input type="text" id="calCuarRespNuevo" placeholder="Escribir nuevo responsable…">
-      <button class="btn" onclick="calCuarAddResponsable()">+ Añadir</button>
+
+    <div class="paso ambar bloqueado" id="calPaso3">
+      <div class="paso-rail"><div class="paso-c" id="calPasoC3">3</div></div>
+      <div class="paso-body">
+        <div class="paso-tit">Motivo y responsable</div>
+        <div class="paso-hint">Ingresa primero la cantidad.</div>
+        <div class="paso-cuerpo">
+          <div class="field"><label>Motivo</label><input type="text" id="calCuarMotivo" placeholder="Ej: sospecha de contaminación, revisión pendiente…"></div>
+          <div class="field"><label>Responsable *</label>
+            <select id="calCuarResponsable" onchange="calCuarPasos()">
+              <option value="">Selecciona…</option>
+              ${responsables.map(c=>`<option value="${escHtml(c.nombre)}">${escHtml(c.nombre)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="inline-add" style="margin-bottom:6px;">
+            <input type="text" id="calCuarRespNuevo" placeholder="Escribir nuevo responsable…">
+            <button class="btn" onclick="calCuarAddResponsable()">+ Añadir</button>
+          </div>
+        </div>
+      </div>
     </div>
-    <div class="modal-actions">
-      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn primary" style="--accent:var(--calidad)" onclick="calCuarGuardar('${escHtml(codigo)}','${escHtml(item?item.nombre:codigo)}','${escHtml(item?item.medida:'')}')">Poner en cuarentena</button>
+
+    <div class="mfoot">
+      <div class="lote-remain" id="loteRemain"></div>
+      <div class="modal-actions">
+        <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+        <button class="btn primary" style="--accent:var(--calidad)" onclick="calCuarGuardar('${escHtml(codigo)}','${escHtml(item?item.nombre:codigo)}','${escHtml(medida)}')">Poner en cuarentena</button>
+      </div>
     </div>
   `);
+  calCuarPasos();
+  setTimeout(()=>{ const q=document.getElementById('calCuarCantidad'); if(q) q.focus(); }, 60);
+  loteRenderLista();
 }
-function calCuarLoteSeleccionado(sel){
-  const opt = sel.options[sel.selectedIndex];
-  const disp = opt ? opt.getAttribute('data-disp') : null;
-  const cantInput = document.getElementById('calCuarCantidad');
-  if(cantInput) cantInput.value = disp || '';
-  cantInput.dataset.max = disp || '';
+// Pasos de la ventana de cuarentena: cada uno se habilita cuando el anterior está completo.
+function calCuarPasos(){
+  const total = loteConsumo.total;
+  const asignado = Object.values(loteConsumo.seleccion).reduce((s,v)=>s+v,0);
+  const cantOk = total>0 && total <= (loteConsumo.totalDisp||0) + 0.0001;
+  const lotesOk = cantOk && Math.abs(total - asignado) <= 0.001;
+  const resp = document.getElementById('calCuarResponsable');
+  const respOk = !!(resp && resp.value);
+  const poner = (n, estado)=>{
+    const el = document.getElementById('calPaso'+n); if(!el) return;
+    el.classList.remove('activo','hecho','bloqueado'); el.classList.add(estado);
+    const c = document.getElementById('calPasoC'+n); if(c) c.textContent = estado==='hecho' ? '✓' : String(n);
+  };
+  poner(1, cantOk ? 'hecho' : 'activo');
+  poner(2, !cantOk ? 'bloqueado' : (lotesOk ? 'hecho' : 'activo'));
+  poner(3, !cantOk ? 'bloqueado' : (lotesOk && respOk ? 'hecho' : 'activo'));
+}
+// Al cambiar la cantidad se limpian los lotes elegidos (igual que en Cronograma):
+// hay que volver a elegirlos para la cantidad nueva.
+function calCuarCantidadInput(el){
+  const v = parseFloat(String(el.value).replace(',','.'));
+  loteConsumo.total = (isNaN(v) || v<=0) ? 0 : Math.round(v*10000)/10000;
+  loteConsumo.seleccion = {};
+  const aviso = document.getElementById('calCuarDispTotal');
+  if(aviso){
+    const excede = loteConsumo.total > loteConsumo.totalDisp + 0.0001;
+    aviso.style.color = excede ? 'var(--danger)' : '';
+    aviso.textContent = 'Disponible en total: ' + fmtNum(loteConsumo.totalDisp) + ' ' + loteConsumo.medida + (excede ? ' — la cantidad es mayor a lo disponible' : '');
+  }
+  loteRenderLista();
 }
 async function calCuarAddResponsable(){
   const input = document.getElementById('calCuarRespNuevo');
@@ -8138,23 +8402,32 @@ async function calCuarAddResponsable(){
   toast('Responsable agregado');
 }
 async function calCuarGuardar(codigo, nombre, medida){
-  const lote = document.getElementById('calCuarLote').value;
-  if(!lote){ toast('Selecciona el lote'); return; }
-  const cantInput = document.getElementById('calCuarCantidad');
-  const cantidad = parseFloat((cantInput.value||'0').replace(',','.'));
-  const max = parseFloat(cantInput.dataset.max||'0');
-  if(!cantidad || cantidad<=0){ toast('Ingresa la cantidad a revisar'); return; }
-  if(cantidad > max + 0.001){ toast('La cantidad no puede ser mayor a la disponible (' + fmtNum(max) + ')'); return; }
+  const total = loteConsumo.total;
+  if(!(total>0)){ toast('Ingresa la cantidad a poner en cuarentena'); return; }
+  const sel = Object.entries(loteConsumo.seleccion).filter(([,v])=>v>0).map(([lote,cantidad])=>({lote, cantidad}));
+  if(!sel.length){ toast('Elige el o los lotes'); return; }
+  const asignado = sel.reduce((t,l)=>t+l.cantidad,0);
+  const falta = Math.round((total - asignado)*10000)/10000;
+  if(falta > 0.001){ toast('Los lotes elegidos no completan la cantidad. Falta ' + fmtNum(falta) + '.'); return; }
+  if(falta < -0.001){ toast('Las cantidades por lote se pasan de la cantidad indicada por ' + fmtNum(-falta) + '.'); return; }
+  for(const sl of sel){
+    const l = loteConsumo.disponibles.find(x=>x.lote===sl.lote);
+    if(!l || sl.cantidad > l._max + 0.001){ toast('El lote ' + sl.lote + ' no tiene tanta cantidad disponible (' + fmtNum(l?l._max:0) + ')'); return; }
+  }
   const responsable = document.getElementById('calCuarResponsable').value;
   if(!responsable){ toast('El responsable es obligatorio'); return; }
   const motivo = document.getElementById('calCuarMotivo').value.trim();
-  const { error } = await sb.from('cuarentena_lotes').insert({
-    item_codigo: codigo, item_nombre: nombre, lote, medida, cantidad, motivo: motivo||null, responsable, estado:'en_cuarentena'
-  });
+  // Si la cantidad se reparte en varios lotes, queda un registro de cuarentena
+  // por cada lote — así cada uno se puede aprobar o descartar por separado.
+  const filas = sel.map(sl=>({
+    item_codigo: codigo, item_nombre: nombre, lote: sl.lote, medida, cantidad: sl.cantidad,
+    motivo: motivo||null, responsable, estado:'en_cuarentena'
+  }));
+  const { error } = await sb.from('cuarentena_lotes').insert(filas);
   if(error){ toast('Error: '+error.message); return; }
   closeModal();
   await calCuarLoad();
-  toast('Cantidad puesta en cuarentena — ya no se puede usar en ningún selector');
+  toast(filas.length>1 ? ('Cantidad puesta en cuarentena en ' + filas.length + ' lotes — ya no se puede usar en ningún selector') : 'Cantidad puesta en cuarentena — ya no se puede usar en ningún selector');
 }
 async function calCuarResolver(id, nuevoEstado){
   const registro = (cacheCalCuarentena||[]).find(c=>c.id===id);
@@ -8499,8 +8772,8 @@ function openIngredientesReview(cronogramaId){
   const cr = monGetCronograma(cronogramaId);
   if(!cr) return;
   openModal(`
-    <h3>Ingredientes</h3>
-    <div class="msub">${escHtml(cr.orden_produccion||'')} · ${escHtml(cr.item_codigo)}</div>
+    <div class="mhead"><span class="sup">Revisión</span><h3>Ingredientes</h3><div class="msub">${escHtml(cr.orden_produccion||'')} · ${escHtml(cr.item_codigo)}</div></div>
+    <div class="sec verde"><div class="sec-h">Ingredientes de la orden</div><div class="sec-b">
     <div class="field">
       <label>Agregar otro ingrediente</label>
       <input type="text" id="pfIngSearch" placeholder="Buscar por código o nombre…" oninput="crIngSearchInput('${cronogramaId}', this.value)">
@@ -8510,6 +8783,7 @@ function openIngredientesReview(cronogramaId){
       <label>Ingredientes ingresados</label>
       <div id="pfIngList"></div>
     </div>
+    </div></div>
     <div class="modal-actions">
       <button class="btn primary" style="--accent:var(--datos)" onclick="closeModal()">Listo</button>
     </div>
@@ -10483,8 +10757,7 @@ function selElegirLoteSellado(tipo, codigo){
   const lotes = (cacheSelladoPendientes||[]).filter(p=>p.item_codigo===codigo);
   if(!lotes.length){ toast('Ya no hay pendiente por sellar de este producto'); return; }
   openModal(`
-    <h3>${escHtml(lotes[0].item_nombre)}</h3>
-    <div class="msub">${escHtml(codigo)} · elige el lote a sellar</div>
+    <div class="mhead"><h3>${escHtml(lotes[0].item_nombre)}</h3><div class="msub">${escHtml(codigo)} · elige el lote a sellar</div></div>
     <div class="reg-list">
       ${lotes.map(l=>`
         <div class="reg-row" onclick="closeModalAll();selAddItemPendiente('${tipo}','${escHtml(codigo)}','${escHtml(l.lote||'')}')">
@@ -11166,8 +11439,8 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
   const horaFinValor = it.hora_fin ? new Date(it.hora_fin).toTimeString().slice(0,5) : (finalizando ? nowHM() : '');
   const loteBloqueado = it.pendiente_al_iniciar!=null; // vino auto-cargado desde Cronograma/Monitoreo
   openModal(`
-    <h3>${escHtml(it.item_nombre)}</h3>
-    <div class="msub">${escHtml(it.item_codigo)}</div>
+    <div class="mhead"><span class="sup">${escHtml(it.item_codigo)}</span><h3>${escHtml(it.item_nombre)}</h3><div class="msub">${escHtml(meta.nombre||'Sellado')}</div></div>
+    <div class="sec azul"><div class="sec-h">Lote y personal</div><div class="sec-b">
     <div class="field">
       <label>Lote</label>
       <div style="display:flex;gap:8px;">
@@ -11180,27 +11453,34 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
       <div class="field"><label>N° Personas</label><input type="text" inputmode="numeric" id="selPersonas" value="${it.n_personas!=null?it.n_personas:2}"></div>
       <div class="field"><label>N° Selladoras</label><input type="text" id="selSelladoras" value="${escHtml(it.n_selladoras||(meta.esSellado?'1':'N/A'))}" ${meta.esSellado?'':'disabled'}></div>
     </div>
+    </div></div>
+    <div class="sec turquesa"><div class="sec-h">Tiempos</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Hora de inicio</label><input type="time" id="selHoraInicioManual" value="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}"></div>
       <div class="field"><label>Hora de fin</label><input type="time" id="selHoraFinManual" value="${horaFinValor}"></div>
     </div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Se pueden escribir manualmente si se olvidó presionar Iniciar/Finalizar en el momento; el tiempo se calcula solo.</div>
+    </div></div>
     ${meta.esSellado && it.item_codigo!=='N/A' ? `
+    <div class="sec verde"><div class="sec-h">Producción</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Meta por Selladora (u/h)</label><input type="text" value="${fmtRaw(metaUh)}" disabled></div>
       ${it.pendiente_al_iniciar!=null ? `<div class="field"><label>Cantidad por sellar</label><input type="text" value="${fmtRaw(it.pendiente_al_iniciar)}" disabled></div>` : ''}
     </div>
     <div class="field"><label>Cantidad sellada</label><input type="text" inputmode="decimal" id="selCantidad" placeholder="Escribe la cantidad realmente sellada…" value="${it.cantidad!=null?fmtRaw(it.cantidad):''}"></div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">La meta se define en Configuración → Metas de Sellado.</div>
-    <div class="sel-section-title">Cartones / cajas usados</div>
-    <div class="sub" style="margin-top:-6px;">Esto sí descuenta del Kardex — es lo que realmente se consume al sellar. Se precargan según la fórmula del producto.</div>
+    </div></div>
+    <div class="sec ambar"><div class="sec-h">Cartones / cajas usados</div><div class="sec-b">
+    <div class="sub" style="margin-bottom:8px;">Esto sí descuenta del Kardex — es lo que realmente se consume al sellar. Se precargan según la fórmula del producto.</div>
     <div id="selCartonList"></div>
     <div class="field">
       <label>Agregar otro cartón/caja</label>
       <input type="text" id="selCartonSearch" placeholder="Buscar por código o nombre…" oninput="selBuscarCarton(this.value)">
       <div class="search-results" id="selCartonResults"></div>
     </div>
+    </div></div>
     ` : ''}
+    <div class="sec gris"><div class="sec-h">Cierre</div><div class="sec-b">
     <div class="field"><label>Observaciones</label>
       <textarea id="selObs" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;">${escHtml(it.observaciones||'')}</textarea>
     </div>
@@ -11214,6 +11494,7 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
       <input type="text" id="selRespNuevo" placeholder="Escribir nuevo responsable…">
       <button class="btn" onclick="selAddResponsable()">+ Añadir</button>
     </div>
+    </div></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--materia)" onclick="saveSelItemModal('${tipo}','${itemId}')">Guardar</button>
@@ -11305,15 +11586,13 @@ async function selAbrirLotePickerCarton(idx){
   const cantidad = c.cantidad;
   if(!cantidad || cantidad<=0){ toast('Primero ingresa la cantidad usada'); return; }
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(c.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(c.item_nombre)}</h3>
-    <div class="msub">Selecciona el o los lotes a consumir</div>
+    <div class="mhead"><span class="sup">${escHtml(c.item_codigo)}</span><h3>${escHtml(c.item_nombre)}</h3><div class="msub">Selecciona el o los lotes a consumir</div></div>
     <div id="selCartonLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-    <div class="lote-remain" id="selCartonLoteRemain"></div>
+    <div class="mfoot"><div class="lote-remain" id="selCartonLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarLotesCarton(${idx})">Confirmar</button>
-    </div>
+    </div></div>
   `);
   const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', c.item_codigo).order('fecha_ingreso');
   const listEl = document.getElementById('selCartonLoteList');
@@ -11476,8 +11755,7 @@ async function openSelLotePicker(tipo, itemId){
   const it = selFindItem(tipo, itemId);
   if(!it) return;
   openModal(`
-    <h3>${escHtml(it.item_nombre)}</h3>
-    <div class="msub">Selecciona el lote disponible en Kardex</div>
+    <div class="mhead"><h3>${escHtml(it.item_nombre)}</h3><div class="msub">Selecciona el lote disponible en Kardex</div></div>
     <div id="selLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
     <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Volver</button></div>
   `);
@@ -12199,21 +12477,24 @@ function bodOpenItemDetalle(itemId){
   const sinLote = itemMaestro && itemMaestro.requiere_lote===false;
   if(sinLote && !it.lote) it.lote = 'N/A';
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(it.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(it.item_nombre)}</h3>
+    <div class="mhead"><span class="sup">${escHtml(it.item_codigo)}</span><h3>${escHtml(it.item_nombre)}</h3><div class="msub">Recepción de materia prima</div></div>
+    <div class="sec azul"><div class="sec-h">Cantidad y lote</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Cantidad</label><input type="text" inputmode="decimal" id="biCantidad" value="${fmtRaw(it.cantidad)}"></div>
       <div class="field"><label>Medida</label><input type="text" value="${escHtml(it.medida)}" disabled></div>
     </div>
     <div class="field"><label>Lote</label><input type="text" id="biLote" value="${escHtml(it.lote||'')}" ${sinLote?'disabled':''}></div>
+    </div></div>
+    <div class="sec turquesa"><div class="sec-h">Fechas y vida útil</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Fecha de elaboración</label><input type="date" id="biFechaElab" value="${it.fecha_elaboracion||''}" onchange="bodItemFechaChange('${itemId}')"></div>
       <div class="field"><label>Fecha de expiración</label><input type="date" id="biFechaExp" value="${it.fecha_expiracion||''}" onchange="bodItemFechaChange('${itemId}')"></div>
     </div>
     <div class="readonly-box" id="biVidaUtil" style="margin-bottom:14px;">Vida útil: <b>${vidaUtil!=null?(vidaUtil+' día(s)'):'—'}</b></div>
 
-    <div class="section-title">Control de calidad del ítem</div>
-    <div class="sub" style="margin-top:-6px;margin-bottom:10px;">Selecciona si cumple; si no se selecciona, se entiende que no cumple.</div>
+    </div></div>
+    <div class="sec morado"><div class="sec-h">Control de calidad del ítem</div><div class="sec-b">
+    <div class="sub" style="margin-bottom:10px;">Selecciona si cumple; si no se selecciona, se entiende que no cumple.</div>
     <div class="field-row" style="align-items:center;margin-bottom:10px;">
       <button class="chip-toggle ${it.temperatura_cumple?'active':''}" type="button" style="flex:0 0 auto;" onclick="bodToggleItemCheck('${itemId}','temperatura_cumple')">Temperatura</button>
       <input type="text" inputmode="decimal" id="biTemp" placeholder="°C" value="${it.temperatura!=null?fmtRaw(it.temperatura):''}" style="flex:1;">
@@ -12224,6 +12505,7 @@ function bodOpenItemDetalle(itemId){
       <button class="chip-toggle ${it.apariencia_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','apariencia_cumple')">Apariencia</button>
       <button class="chip-toggle ${it.integridad_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','integridad_cumple')">Integridad de empaque</button>
     </div>
+    </div></div>
 
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
@@ -12885,11 +13167,11 @@ async function despConfirmCantidad(codigo){
     <h3>${escHtml(item.nombre)}</h3>
     <div class="msub">Elige los lotes hasta completar ${fmtNum(cant)} ${escHtml(item.medida)}</div>
     <div id="despLoteList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
-    <div class="lote-remain" id="despLoteRemain"></div>
+    <div class="mfoot"><div class="lote-remain" id="despLoteRemain"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
       <button class="btn primary" style="--accent:var(--paradas)" onclick="despConfirmLotes('${escHtml(codigo)}')">Agregar</button>
-    </div>
+    </div></div>
   `);
   const { data: dataRaw, error } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
   const listEl = document.getElementById('despLoteList');
@@ -12969,9 +13251,7 @@ function despOpenItemDetalle(itemId){
   const it = (DespState.draft.items||[]).find(i=>i.id===itemId);
   if(!it) return;
   openModal(`
-    <span class="sup" style="font-size:11px;color:var(--muted);font-weight:600;">${escHtml(it.item_codigo)}</span>
-    <h3 style="margin-top:2px;">${escHtml(it.item_nombre)}</h3>
-    <div class="msub">Lote(s): ${escHtml((it.lotes||[]).map(l=>l.lote+' ('+fmtNum(l.cantidad)+')').join(', '))} · ${fmtNum(it.cantidad)} ${escHtml(it.medida)}</div>
+    <div class="mhead"><span class="sup">${escHtml(it.item_codigo)}</span><h3>${escHtml(it.item_nombre)}</h3><div class="msub">Lote(s): ${escHtml((it.lotes||[]).map(l=>l.lote+' ('+fmtNum(l.cantidad)+')').join(', '))} · ${fmtNum(it.cantidad)} ${escHtml(it.medida)}</div></div>
     <div class="field"><label>Temperatura del producto (°C)</label><input type="text" inputmode="decimal" id="diTemp" value="${it.temperatura!=null?fmtRaw(it.temperatura):''}"></div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cerrar</button>
