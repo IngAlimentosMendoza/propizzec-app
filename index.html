@@ -695,6 +695,23 @@ if(sb){
         return original(...args);
       };
     });
+    // Si no hay internet (o la señal es tan mala que la petición nunca
+    // recibe respuesta), sin esto la app se queda esperando PARA SIEMPRE,
+    // sin ningún aviso — se ve como que "se trabó". Después de 20 segundos
+    // sin respuesta, se corta sola con un error de conexión, en el MISMO
+    // formato {data, error} que ya usa toda la app — así el aviso ("Error: …")
+    // y el botón que se vuelve a habilitar funcionan solos, sin tener que
+    // tocar cada función de guardado una por una.
+    if(typeof builder.then === 'function'){
+      const thenOriginal = builder.then.bind(builder);
+      builder.then = function(onFulfilled, onRejected){
+        const conTimeout = Promise.race([
+          new Promise((resolve, reject)=>{ thenOriginal(resolve, reject); }),
+          new Promise(resolve=>setTimeout(()=>resolve({ data:null, error:{ message:'Tiempo de espera agotado — revisa tu conexión a internet' } }), 20000))
+        ]);
+        return conTimeout.then(onFulfilled, onRejected);
+      };
+    }
     return builder;
   };
 }
@@ -2552,7 +2569,8 @@ const TABLAS_SINCRONIZADAS = [
   'etiquetado_registros','cuarentena_lotes','entregas','despacho_registros',
   'bodega_registros','catalogos','producto_codigos_cliente','metas_sellado',
   'personal_planificacion','sellado_config_actividades','despacho_destinos',
-  'bodega_proveedores','bodega_conductores','config_horarios','usuarios_area'
+  'bodega_proveedores','bodega_conductores','config_horarios','usuarios_area',
+  'items','formulacion','medidas','tipos_item'
 ];
 let canalSincronizacion = null;
 let sincTimer = null;
@@ -2573,6 +2591,7 @@ const CACHE_POR_TABLA = {
   cronograma:          { get:()=>cacheCronograma,    set:(a)=>{ cacheCronograma=a; } },
   entregas:            { get:()=>cacheEntregas,      set:(a)=>{ cacheEntregas=a; } },
   items:               { get:()=>cacheItems,         set:(a)=>{ cacheItems=a; } },
+  formulacion:         { get:()=>cacheFormulacion,   set:(a)=>{ cacheFormulacion=a; } },
   registro_produccion: { get:()=>MonRegState.rows,   set:(a)=>{ MonRegState.rows=a; } },
   despacho_registros:  { get:()=>DespRegState.rows,  set:(a)=>{ DespRegState.rows=a; } },
   etiquetado_registros:{ get:()=>cacheEtiqRegistros, set:(a)=>{ cacheEtiqRegistros=a; } },
@@ -2650,6 +2669,10 @@ const REFRESCO_GRANULAR_POR_TABLA = {
   },
   items: ()=>{
     if(currentModule==='inventario' && InvState && InvState.tab==='items'){ renderItemsTab(); return true; }
+    return true;
+  },
+  formulacion: ()=>{
+    if(currentModule==='inventario' && InvState && InvState.tab==='formulacion'){ renderFormulacionTab(); return true; }
     return true;
   },
   kardex_movimientos: ()=>{
