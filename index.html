@@ -2729,14 +2729,16 @@ function aplicarCambioEnCronogramaIngredientes(payload){
   }
 }
 async function manejarCambioEnVivo(tabla, payload){
+ try{
   if(tabla === 'cronograma_ingredientes'){
     aplicarCambioEnCronogramaIngredientes(payload);
     // Esta se actualiza AL INSTANTE, incluso con una ventana abierta — es
     // justamente para avisar mientras alguien está mirando o llenando esa
     // misma lista de ingredientes, que es el caso que se quiere cubrir:
     // que no se vaya a pisar lo que otro dispositivo ya puso.
-    const cronogramaIdDelCambio = (payload.new||payload.old).cronograma_id;
-    if(cronogramaIngredientesAbiertoId && cronogramaIdDelCambio===cronogramaIngredientesAbiertoId && document.getElementById('pfIngList')){
+    const origen = payload.new || payload.old || {};
+    const cronogramaIdDelCambio = origen.cronograma_id;
+    if(cronogramaIdDelCambio && cronogramaIngredientesAbiertoId && cronogramaIdDelCambio===cronogramaIngredientesAbiertoId && document.getElementById('pfIngList')){
       pfRenderIngredientes(cronogramaIngredientesAbiertoId);
     }
     return;
@@ -2750,6 +2752,7 @@ async function manejarCambioEnVivo(tabla, payload){
   // vez, en vez de una vez por cada cambio.
   clearTimeout(sincTimer);
   sincTimer = setTimeout(()=>{
+   try{
     const tablas = [...tablasPendientesSinc];
     tablasPendientesSinc.clear();
     // Si ESTE dispositivo acaba de guardar algo hace muy poco, este aviso es
@@ -2760,8 +2763,13 @@ async function manejarCambioEnVivo(tabla, payload){
     if(bg && bg.classList.contains('show')) return; // no interrumpir algo abierto
     let todasConPatchFino = true;
     tablas.forEach(t=>{
-      if(REFRESCO_GRANULAR_POR_TABLA[t]) REFRESCO_GRANULAR_POR_TABLA[t]();
-      else todasConPatchFino = false;
+      try{
+        if(REFRESCO_GRANULAR_POR_TABLA[t]) REFRESCO_GRANULAR_POR_TABLA[t]();
+        else todasConPatchFino = false;
+      }catch(e){
+        console.error('Error refrescando la tabla', t, '— no debería trabar el resto de la app:', e);
+        todasConPatchFino = false; // si falló el parche fino, al menos que caiga en el refresco general de respaldo
+      }
     });
     if(!todasConPatchFino){
       // Alguna de las tablas que cambiaron todavía no tiene su propio parche
@@ -2771,7 +2779,16 @@ async function manejarCambioEnVivo(tabla, payload){
     } else {
       calcularAlertas();
     }
+   }catch(e){
+    // Pase lo que pase acá adentro, nunca debe dejar la app "pegada" — en el
+    // peor caso, simplemente esa actualización en vivo puntual no se vio,
+    // pero el resto de la aplicación sigue funcionando con normalidad.
+    console.error('Error en la sincronización en vivo (refresco):', e);
+   }
   }, 700);
+ }catch(e){
+  console.error('Error en la sincronización en vivo (aviso de cambio):', e);
+ }
 }
 // Usada tanto por la sincronización en vivo como por el refresco al volver
 // a la pestaña: refresca la pantalla actual, salvo que haya una ventana
