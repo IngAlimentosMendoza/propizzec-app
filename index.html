@@ -724,7 +724,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.04-3</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.05-1</div>
     </div>
   </nav>
 
@@ -2664,6 +2664,9 @@ const ROLE_PERMISSIONS = {
 };
 function getRolePermiso(area){ return ROLE_PERMISSIONS[area] || null; }
 function permisoActual(){ return getRolePermiso(currentArea); }
+// Áreas de producción (Masa, Acondicionamiento 1/2/3) solo ven lo suyo: devuelve el
+// nombre del área a la que está restringido el usuario actual, o null si ve todas.
+function areaPlanRestringida(){ const p = permisoActual(); return (p && p.planArea) ? p.planArea : null; }
 function aplicarPermisosSidebar(permiso){
   document.querySelectorAll('.side-item').forEach(b=>{
     const mod = b.dataset.mod;
@@ -2784,6 +2787,10 @@ function actualizarCacheSellado(payload){
 function aplicarCambioEnCache(tabla, payload){
   const cfg = CACHE_POR_TABLA[tabla];
   if(!cfg) return;
+  if(tabla === 'cronograma'){ // un área restringida ignora las órdenes (nuevas o modificadas) de otras áreas
+    const areaR = areaPlanRestringida(), fila = payload.new || payload.old;
+    if(areaR && payload.eventType !== 'DELETE' && fila && fila.area !== areaR) return;
+  }
   const arr = cfg.get() || [];
   if(payload.eventType === 'DELETE'){
     cfg.set(arr.filter(r=>r.id !== payload.old.id));
@@ -2982,6 +2989,7 @@ async function calcularAlertas(){
  try{
   const hoy = todayISO();
   const alertas = [];
+  const areaAl = areaPlanRestringida(); // un área restringida solo ve alertas de sus propias órdenes
 
   // Para evitar pedir el Kardex dos veces, se trae una sola vez y se usa
   // tanto para "stock negativo" como para "lotes por caducar".
@@ -2991,7 +2999,7 @@ async function calcularAlertas(){
   // 1) Cantidades negativas o sospechosas (Cronograma + ingredientes)
   const { data: cronoNeg } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area')
     .or('cantidad_programada.lt.0,cantidad_real.lt.0');
-  (cronoNeg||[]).forEach(r=>{
+  (cronoNeg||[]).filter(r=>!areaAl || r.area===areaAl).forEach(r=>{
     alertas.push({
       id:'neg-crono-'+r.id, tipo:'negativo', severidad:'alta',
       titulo:'Cantidad negativa en producción',
@@ -3006,6 +3014,7 @@ async function calcularAlertas(){
     ingNeg.forEach(ci=>{
       const padre = (padres||[]).find(p=>p.id===ci.cronograma_id);
       if(!padre) return;
+      if(areaAl && padre.area!==areaAl) return;
       alertas.push({
         id:'neg-ing-'+ci.id, tipo:'negativo', severidad:'alta',
         titulo:'Consumo de ingrediente negativo',
@@ -3034,7 +3043,7 @@ async function calcularAlertas(){
   const limiteViejo = entSumarDias(hoy, -3);
   const { data: sinVerificar } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area, estado_verificacion')
     .lt('fecha', limiteViejo).or('estado_verificacion.is.null,estado_verificacion.neq.aprobado');
-  (sinVerificar||[]).forEach(r=>{
+  (sinVerificar||[]).filter(r=>!areaAl || r.area===areaAl).forEach(r=>{
     alertas.push({
       id:'sinver-'+r.id, tipo:'sin_verificar', severidad:'media',
       titulo:'Orden sin verificar hace días',
@@ -3058,7 +3067,7 @@ async function calcularAlertas(){
   // 5) Producciones sin completar (cantidad real nunca ingresada, de un día ya pasado)
   const { data: incompletas } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area, cantidad_real')
     .lt('fecha', hoy).is('cantidad_real', null);
-  (incompletas||[]).forEach(r=>{
+  (incompletas||[]).filter(r=>!areaAl || r.area===areaAl).forEach(r=>{
     alertas.push({
       id:'incompleta-'+r.id, tipo:'incompleta', severidad:'media',
       titulo:'Producción sin completar',
@@ -3066,6 +3075,11 @@ async function calcularAlertas(){
       accion:{ modulo:'planificacion', cronogramaId:r.id, fecha:r.fecha, area:r.area }
     });
   });
+
+  // Solo se muestran las alertas que llevan a una página que este usuario puede abrir
+  const perm = permisoActual();
+  const visibles = (perm && perm.modulos) ? alertas.filter(a=>!a.accion || !a.accion.modulo || perm.modulos.includes(a.accion.modulo)) : alertas.slice();
+  alertas.length = 0; visibles.forEach(a=>alertas.push(a));
 
   // Las de más gravedad primero
   alertas.sort((a,b)=> (a.severidad==='alta'?0:1) - (b.severidad==='alta'?0:1));
@@ -4611,6 +4625,7 @@ async function nextOP(){
 
 function renderCronogramaTab(){
   const body = document.getElementById('planBody');
+  const areaR = areaPlanRestringida();
   const esHoy = planFechaActual === todayISO();
   body.innerHTML = `
     <div class="field" style="max-width:220px;">
@@ -4624,7 +4639,7 @@ function renderCronogramaTab(){
         <div class="search-results" id="crSearchResults"></div>
       </div>
     </div>
-    <div class="list-meta">Cronograma del ${ddMMyy(planFechaActual)} · ${(cacheCronograma||[]).length} orden(es)</div>
+    <div class="list-meta">Cronograma del ${ddMMyy(planFechaActual)} · ${(cacheCronograma||[]).filter(r=>!areaR || r.area===areaR).length} orden(es)</div>
     <div class="reg-list" id="crList"></div>
   `;
   const input = document.getElementById('crSearch');
@@ -4632,7 +4647,7 @@ function renderCronogramaTab(){
   input.focus();
 
   const list = document.getElementById('crList');
-  const rows = (cacheCronograma||[]).filter(r=>!r.finalizado && (r.fecha===planFechaActual || r._arrastrado)).slice().sort((a,b)=>(a._arrastrado?0:1)-(b._arrastrado?0:1) || (a.created_at||'').localeCompare(b.created_at||''));
+  const rows = (cacheCronograma||[]).filter(r=>(!areaR || r.area===areaR) && !r.finalizado && (r.fecha===planFechaActual || r._arrastrado)).slice().sort((a,b)=>(a._arrastrado?0:1)-(b._arrastrado?0:1) || (a.created_at||'').localeCompare(b.created_at||''));
   if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin órdenes registradas en esta fecha</div>'; return; }
   list.innerHTML = rows.map(r=>{
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
@@ -6222,6 +6237,7 @@ async function regLoad(){
   let query = sb.from('cronograma').select('*, cronograma_ingredientes(*)').order('fecha',{ascending:false}).order('created_at',{ascending:false});
   if(RegState.desde) query = query.gte('fecha', RegState.desde);
   if(RegState.hasta) query = query.lte('fecha', RegState.hasta);
+  const areaR = areaPlanRestringida(); if(areaR) query = query.eq('area', areaR); // cada área ve solo sus producciones
   const { data, error } = await query.limit(500);
   if(!error) RegState.rows = data||[];
   else RegState.rows = [];
@@ -6379,7 +6395,9 @@ function renderParadasTab(){
 async function paradasRegReload(){
   const desde = ParadasRegState.desde || todayISO();
   const hasta = ParadasRegState.hasta || todayISO();
-  const { data: cronoRows } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha').gte('fecha', desde).lte('fecha', hasta);
+  let cronoQ = sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha').gte('fecha', desde).lte('fecha', hasta);
+  const areaP = areaPlanRestringida(); if(areaP) cronoQ = cronoQ.eq('area', areaP); // cada área ve solo sus paradas
+  const { data: cronoRows } = await cronoQ;
   const cronoMap = {}; (cronoRows||[]).forEach(c=>cronoMap[c.id]=c);
   const ids = (cronoRows||[]).map(c=>c.id);
   if(!ids.length){ paradasRegRows = []; paradasRegRenderList(); return; }
