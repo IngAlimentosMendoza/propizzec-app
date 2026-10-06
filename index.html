@@ -724,7 +724,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.05-1</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.06-4</div>
     </div>
   </nav>
 
@@ -2985,16 +2985,112 @@ function closeSidebar(){
    ============================================================ */
 let cacheAlertas = [];
 let alertasIdsVistos = new Set(); // para saber cuáles son "nuevas" y hacer temblar la campana solo con esas
+/* ===== Alertas según el área =====
+   Cada área solo ve las alertas que le sirven:
+   - Masa y Acondicionamiento 1/2/3: sus propias órdenes, y el inventario de los productos
+     e ingredientes que aparecen en SUS órdenes (últimos 30 días, más las abiertas).
+   - Bodega: inventario de todos los ingredientes (todo lo que no es producto de venta).
+   - Sellado: cajas de sellado y lo que falta por sellar de días anteriores.
+   - Etiquetado: fundas y órdenes por etiquetar de días anteriores.
+   - Logística: entregas por despachar (sin lotes, listas, atrasadas).
+   - Producción, Calidad y demás: todo. */
+function perfilAlertas(){
+  if(areaPlanRestringida()) return 'produccion';
+  if(currentArea === 'BODEGA') return 'bodega';
+  if(currentArea === 'SELLADO') return 'sellado';
+  if(currentArea === 'ETIQUETADO') return 'etiquetado';
+  if(currentArea === 'LOGISTICA') return 'logistica';
+  return 'todo';
+}
+// Devuelve null (= le sirven todos los ítems) o un Set con los códigos de ítem que le sirven al área.
+async function itemsRelevantesParaAlertas(perfil){
+  const items = cacheItems || [];
+  if(perfil === 'todo') return null;
+  if(perfil === 'bodega') return new Set(items.filter(i=>i.tipo !== 'PRODUCTO_VENTA').map(i=>i.codigo));
+  if(perfil === 'sellado') return new Set(items.filter(i=>i.tipo === 'MATERIAL_EMPAQUE' && i.es_caja_sellado).map(i=>i.codigo));
+  if(perfil === 'etiquetado') return new Set(items.filter(i=>esFundaEtiquetado(i)).map(i=>i.codigo));
+  if(perfil === 'logistica') return new Set(); // sus alertas son de entregas, no de inventario
+  // Áreas de producción: lo que aparece en sus propias órdenes (productos e ingredientes)
+  const area = areaPlanRestringida(), desde = entSumarDias(todayISO(), -30), s = new Set();
+  const [recientes, abiertas] = await Promise.all([
+    sb.from('cronograma').select('item_codigo, cronograma_ingredientes(item_codigo)').eq('area', area).gte('fecha', desde),
+    sb.from('cronograma').select('item_codigo, cronograma_ingredientes(item_codigo)').eq('area', area).eq('finalizado', false)
+  ]);
+  [...(recientes.data||[]), ...(abiertas.data||[])].forEach(r=>{
+    s.add(r.item_codigo);
+    (r.cronograma_ingredientes||[]).forEach(ci=>s.add(ci.item_codigo));
+  });
+  return s;
+}
+// Logística: entregas por despachar
+async function alertasDeEntregas(alertas, hoy){
+  const manana = entSumarDias(hoy, 1);
+  const [ents, desps] = await Promise.all([
+    sb.from('entregas').select('id, fecha, hora_entrega, cliente, numero_oc, completado').gte('fecha', entSumarDias(hoy, -60)).lte('fecha', manana),
+    sb.from('despacho_registros').select('entrega_id')
+  ]);
+  if(ents.error || desps.error) return; // si todavía no existe entrega_id en despacho_registros, no se inventan alertas
+  const despachadas = new Set((desps.data||[]).map(d=>d.entrega_id).filter(Boolean));
+  (ents.data||[]).forEach(e=>{
+    if(despachadas.has(e.id)) return;
+    const cab = `${e.cliente||'(sin cliente)'}${e.numero_oc?(' — OC '+e.numero_oc):''} — ${ddMMyy(e.fecha)} ${(e.hora_entrega||'').slice(0,5)}`.trim();
+    if(e.fecha < hoy){
+      alertas.push({ id:'dsp-atr-'+e.id, tipo:'despacho_atrasado', severidad:'alta', titulo:'Entrega atrasada sin despachar',
+        detalle: cab + (e.completado ? ' (lotes ya asignados)' : ' (sin lotes asignados)'),
+        accion:{ modulo:'despacho', entregaId:e.id, asignar:!e.completado } });
+    } else if(e.completado){
+      alertas.push({ id:'dsp-lista-'+e.id, tipo:'despacho_listo', severidad:'media', titulo:'Entrega lista para despachar',
+        detalle: cab, accion:{ modulo:'despacho', entregaId:e.id, asignar:false } });
+    } else {
+      alertas.push({ id:'dsp-sin-'+e.id, tipo:'despacho_sin_lotes', severidad: e.fecha===hoy?'alta':'media', titulo: e.fecha===hoy?'Entrega de hoy sin lotes asignados':'Entrega de mañana sin lotes asignados',
+        detalle: cab, accion:{ modulo:'despacho', entregaId:e.id, asignar:true } });
+    }
+  });
+}
+// Sellado: producto producido en días anteriores (últimos 7) que todavía tiene algo por sellar
+async function alertasDeSellado(alertas, hoy){
+  await selCargarPendientesSellado();
+  const desde = entSumarDias(hoy, -7);
+  (cacheSelladoPendientes||[]).filter(p=>p.fecha && p.fecha < hoy && p.fecha >= desde).forEach(p=>{
+    alertas.push({ id:'selpend-'+p.item_codigo+'-'+p.lote, tipo:'sellado_pendiente', severidad:'media', titulo:'Pendiente por sellar de días anteriores',
+      detalle:`${p.item_nombre} — lote ${p.lote||'—'} — faltan ${fmtNum(p.pendiente)} ${p.medida||''} (producido ${fmtNum(p.producido)})`.replace(/\s+\(/,' ('),
+      accion:{ modulo:'sellado' } });
+  });
+}
+// Etiquetado: órdenes de días anteriores (últimos 14) que todavía no tienen su etiquetado registrado
+async function alertasDeEtiquetado(alertas, hoy){
+  const hace14 = entSumarDias(hoy, -14);
+  const [ord, etq] = await Promise.all([
+    sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area').lt('fecha', hoy).gte('fecha', hace14),
+    sb.from('etiquetado_registros').select('cronograma_id').gte('fecha', hace14)
+  ]);
+  const con = new Set((etq.data||[]).map(e=>e.cronograma_id));
+  (ord.data||[]).filter(r=>!con.has(r.id) && productoTieneFundas(r.item_codigo)).forEach(r=>{
+    const it = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
+    alertas.push({ id:'etqpend-'+r.id, tipo:'etiquetado_pendiente', severidad:'media', titulo:'Orden por etiquetar de días anteriores',
+      detalle:`${it?it.nombre:r.item_codigo} — Orden ${r.orden_produccion||''} — ${ddMMyy(r.fecha)}`,
+      accion:{ modulo:'etiquetado', cronogramaId:r.id, fecha:r.fecha } });
+  });
+}
 async function calcularAlertas(){
  try{
   const hoy = todayISO();
   const alertas = [];
   const areaAl = areaPlanRestringida(); // un área restringida solo ve alertas de sus propias órdenes
+  const perfil = perfilAlertas();
+  if(!cacheItems || !cacheFormulacion){ try{ await invLoad(false); }catch(_){} }
 
   // Para evitar pedir el Kardex dos veces, se trae una sola vez y se usa
   // tanto para "stock negativo" como para "lotes por caducar".
-  const { data: lotes } = await sb.from('v_kardex_lotes_disponibles').select('*');
+  // Lotes por caducar (filtrados en el servidor) y lotes en negativo (vista aparte: la de disponibles solo muestra saldo > 0)
+  const limiteCad = entSumarDias(hoy, 7);
+  const [{ data: lotes }, { data: negs, error: errNeg }] = await Promise.all([
+    sb.from('v_kardex_lotes_disponibles').select('*').not('fecha_caducidad', 'is', null).lte('fecha_caducidad', limiteCad),
+    sb.from('v_kardex_lotes_negativos').select('*')
+  ]);
   const nombreItem = (codigo)=>{ const it=(cacheItems||[]).find(i=>i.codigo===codigo); return it?it.nombre:codigo; };
+  const relev = await itemsRelevantesParaAlertas(perfil);          // null = le sirven todos los ítems
+  const esRel = (codigo)=> !relev || relev.has(codigo);
 
   // 1) Cantidades negativas o sospechosas (Cronograma + ingredientes)
   const { data: cronoNeg } = await sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area')
@@ -3025,8 +3121,8 @@ async function calcularAlertas(){
   }
 
   // 2) Lotes por caducar pronto (7 días) o ya caducados
-  const limiteCad = entSumarDias(hoy, 7);
   (lotes||[]).forEach(l=>{
+    if(!esRel(l.item_codigo)) return;
     if(Number(l.cantidad_disponible||0)<=0) return;
     if(!l.fecha_caducidad || l.fecha_caducidad==='0000-00-00') return;
     if(l.fecha_caducidad > limiteCad) return;
@@ -3052,16 +3148,15 @@ async function calcularAlertas(){
     });
   });
 
-  // 4) Stock en negativo en el Kardex
-  (lotes||[]).forEach(l=>{
-    if(Number(l.cantidad_disponible||0)<0){
-      alertas.push({
-        id:'stockneg-'+l.item_codigo+'-'+l.lote, tipo:'stock_negativo', severidad:'alta',
-        titulo:'Stock en negativo',
-        detalle:`${nombreItem(l.item_codigo)} — lote ${l.lote} — ${fmtNum(l.cantidad_disponible)}`,
-        accion:{ modulo:'inventario', itemCodigo:l.item_codigo }
-      });
-    }
+  // 4) Stock en negativo en el Kardex (la vista ya trae cuánto se produjo/ingresó y cuánto salió)
+  const negativos = (errNeg ? [] : (negs||[])).filter(l=>esRel(l.item_codigo));
+  negativos.forEach(l=>{
+    const falta = fmtNum(-Number(l.saldo)), producido = Number(l.producido||0);
+    let titulo, detalle;
+    if(producido > 0){ titulo = 'Se consumió más de lo producido'; detalle = `${nombreItem(l.item_codigo)} — lote ${l.lote}: se produjeron ${fmtNum(producido)} y ya salieron ${fmtNum(l.sale)} (faltan ${falta})`; }
+    else { titulo = 'Stock en negativo'; detalle = `${nombreItem(l.item_codigo)} — lote ${l.lote}: ingresaron ${fmtNum(l.entra)} y ya salieron ${fmtNum(l.sale)} (faltan ${falta})`; }
+    alertas.push({ id:'stockneg-'+l.item_codigo+'-'+l.lote, tipo:'stock_negativo', severidad:'alta', titulo, detalle,
+      accion:{ modulo:'inventario', itemCodigo:l.item_codigo } });
   });
 
   // 5) Producciones sin completar (cantidad real nunca ingresada, de un día ya pasado)
@@ -3075,6 +3170,11 @@ async function calcularAlertas(){
       accion:{ modulo:'planificacion', cronogramaId:r.id, fecha:r.fecha, area:r.area }
     });
   });
+
+  // Alertas propias de cada área (entregas, sellado y etiquetado)
+  if(perfil === 'logistica') await alertasDeEntregas(alertas, hoy);
+  if(perfil === 'sellado') await alertasDeSellado(alertas, hoy);
+  if(perfil === 'etiquetado') await alertasDeEtiquetado(alertas, hoy);
 
   // Solo se muestran las alertas que llevan a una página que este usuario puede abrir
   const perm = permisoActual();
@@ -3105,7 +3205,7 @@ function renderCampanaAlertas(){
   if(document.getElementById('alertDropdown').classList.contains('show')) renderAlertasDropdownBody();
 }
 function alertIcono(tipo){
-  return { negativo:'➖', caducidad:'⏳', sin_verificar:'🕐', stock_negativo:'📉', incompleta:'📋' }[tipo] || '⚠️';
+  return { negativo:'➖', caducidad:'⏳', sin_verificar:'🕐', stock_negativo:'📉', incompleta:'📋', despacho_atrasado:'🚨', despacho_sin_lotes:'📦', despacho_listo:'🚚', sellado_pendiente:'📦', etiquetado_pendiente:'🏷️' }[tipo] || '⚠️';
 }
 function toggleAlertasDropdown(){
   const dd = document.getElementById('alertDropdown');
@@ -3137,7 +3237,7 @@ function renderAlertasPage(){
   const app = document.getElementById('app');
   const grupos = {};
   cacheAlertas.forEach(a=>{ (grupos[a.tipo] = grupos[a.tipo]||[]).push(a); });
-  const titulos = { negativo:'Cantidades negativas o sospechosas', caducidad:'Lotes por caducar o caducados', sin_verificar:'Órdenes sin verificar hace días', stock_negativo:'Stock en negativo', incompleta:'Producciones sin completar' };
+  const titulos = { negativo:'Cantidades negativas o sospechosas', caducidad:'Lotes por caducar o caducados', sin_verificar:'Órdenes sin verificar hace días', stock_negativo:'Stock en negativo', incompleta:'Producciones sin completar', despacho_atrasado:'Entregas atrasadas sin despachar', despacho_sin_lotes:'Entregas sin lotes asignados', despacho_listo:'Entregas listas para despachar', sellado_pendiente:'Pendientes por sellar de días anteriores', etiquetado_pendiente:'Órdenes por etiquetar de días anteriores' };
   app.innerHTML = `
     <div class="card" style="--accent:var(--danger)">
       <h2>🔔 Alertas</h2>
@@ -3185,12 +3285,35 @@ async function irAAlerta(alertaId){
     setActiveTab('produccion');
     await monLoad(true);
     await monAbrirProducto(acc.cronogramaId);
+  } else if(acc.modulo === 'despacho'){
+    currentModule = 'despacho';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='despacho'));
+    closeSidebar();
+    DespState.tab = 'despachos';
+    await renderDespacho();
+    setActiveTab('despachos');
+    if(acc.entregaId && acc.asignar) despAbrirAsignacion(acc.entregaId);
+  } else if(acc.modulo === 'sellado'){
+    currentModule = 'sellado';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='sellado'));
+    closeSidebar();
+    SelTabState.tab = 'actividades';
+    await renderSellado();
+    setActiveTab('actividades');
+  } else if(acc.modulo === 'etiquetado'){
+    currentModule = 'etiquetado';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='etiquetado'));
+    closeSidebar();
+    EtiqState.tab = 'actividad';
+    await renderEtiquetado();
+    setActiveTab('actividad');
+    if(acc.cronogramaId) etiqAbrirModal(acc.cronogramaId);
   } else if(acc.modulo === 'inventario'){
     currentModule = 'inventario';
     document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='inventario'));
     closeSidebar();
     await renderInventario();
-    await invLoad(true);
+    await invLoadStock();
     openKardexHistory(acc.itemCodigo);
   }
   window.scrollTo({top:0,behavior:'instant'});
@@ -3583,6 +3706,14 @@ async function invLoad(force){
   await Promise.all(tasks);
 }
 
+// Recarga SOLO el stock (1 consulta en vez de 5). Se usa tras escribir en el Kardex: el catálogo
+// (ítems, fórmulas, tipos y medidas) no cambió, y cuando lo edita otra persona llega en vivo.
+async function invLoadStock(){
+  if(!sb) return;
+  if(!cacheItems || !cacheFormulacion || !cacheTipos || !cacheMedidas){ await invLoad(true); return; } // aún no se había cargado nada
+  const r = await sb.from('v_kardex_stock').select('*');
+  if(!r.error) cacheStock = r.data || [];
+}
 async function renderInventario(){
   const app = document.getElementById('app');
   const soloKardex = !!(permisoActual() && permisoActual().soloKardex);
@@ -3908,7 +4039,7 @@ async function guardarAjuste(codigo, nAjuste){
     if(errFechas){ toast('Ajuste guardado, pero no se pudieron corregir las fechas del lote: ' + errFechas.message); }
   }
   toast(esNuevo ? ('Lote ' + lote + ' agregado al Kardex') : 'Ajuste guardado');
-  await invLoad(true);
+  await invLoadStock();
   closeModalAll();
   openKardexHistory(codigo);
 }
@@ -3969,7 +4100,7 @@ async function eliminarAjuste(id){
   const { error } = await sb.from('kardex_movimientos').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
   AjustesState.rows = (AjustesState.rows||[]).filter(r=>r.id!==id);
-  await invLoad(true);
+  await invLoadStock();
   toast('Ajuste eliminado');
   renderAjustesList();
 }
@@ -4720,20 +4851,77 @@ function crPickProduct(codigo){
 // se corrige sola —no se duplica— cuando cambia la cantidad programada antes
 // de aprobar, o cuando Monitoreo aprueba con la cantidad real (mismo
 // comprobante 'PRODUCCION N° <orden>' en los tres casos).
-async function kardexEscribirProduccionTeorica(row){
+/* ===== Vida útil de los productos =====
+   Cada producto (PT) puede tener configurada su vida útil (cantidad + unidad: días, semanas,
+   meses o años). En Etiquetado, la fecha de caducidad se calcula sola: elaboración + vida útil. */
+const VIDA_UTIL_UNIDADES = [['dias','Días'],['semanas','Semanas'],['meses','Meses'],['anios','Años']];
+function vidaUtilDeItem(item){
+  if(!item) return null;
+  const cantidad = parseInt(item.vida_util_cantidad, 10);
+  if(!(cantidad > 0) || !VIDA_UTIL_UNIDADES.some(u=>u[0]===item.vida_util_unidad)) return null;
+  return { cantidad, unidad: item.vida_util_unidad };
+}
+function vidaUtilTexto(cantidad, unidad){
+  const n = parseInt(cantidad, 10);
+  const nombres = { dias:['día','días'], semanas:['semana','semanas'], meses:['mes','meses'], anios:['año','años'] }[unidad] || ['',''];
+  return n + ' ' + (n===1 ? nombres[0] : nombres[1]);
+}
+// Suma la vida útil a una fecha ISO (AAAA-MM-DD). En meses/años respeta el calendario: si el día
+// no existe en el mes destino, usa el último día de ese mes (31/08 + 6 meses = 28/02).
+function sumarVidaUtil(iso, cantidad, unidad){
+  const n = parseInt(cantidad, 10);
+  if(!iso || !(n > 0)) return '';
+  const [y, m, d] = String(iso).split('-').map(Number);
+  if(!y || !m || !d) return '';
+  let dt;
+  if(unidad === 'dias' || unidad === 'semanas'){
+    dt = new Date(Date.UTC(y, m-1, d));
+    dt.setUTCDate(dt.getUTCDate() + n * (unidad === 'semanas' ? 7 : 1));
+  } else if(unidad === 'meses' || unidad === 'anios'){
+    const total = (m-1) + n * (unidad === 'anios' ? 12 : 1);
+    const ny = y + Math.floor(total/12), nm = ((total % 12) + 12) % 12;
+    const ultimo = new Date(Date.UTC(ny, nm+1, 0)).getUTCDate();
+    dt = new Date(Date.UTC(ny, nm, Math.min(d, ultimo)));
+  } else return '';
+  return dt.toISOString().slice(0,10);
+}
+// Las fechas de elaboración y caducidad del lote viven SOLO en esta entrada del Kardex
+// (columnas fecha_elaboracion / fecha_caducidad). Al reescribirla se conservan las que ya
+// tenía —el mismo DELETE las devuelve, sin consultas extra—, salvo que se indiquen otras
+// en `fechas` ({elab, cad}; con null se limpian, por ejemplo al cambiar de producto).
+async function kardexEscribirProduccionTeorica(row, fechas){
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   if(!item) return { error: null };
   const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
-  const { error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
+  const { data: borradas, error: errDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante).select('fecha_elaboracion, fecha_caducidad');
   if(errDel) return { error: errDel };
+  let fElab = null, fCad = null;
+  if(fechas){ fElab = fechas.elab || null; fCad = fechas.cad || null; }
+  else if(borradas && borradas[0]){ fElab = borradas[0].fecha_elaboracion || null; fCad = borradas[0].fecha_caducidad || null; }
   const cantidad = row.cantidad_real!=null ? row.cantidad_real : row.cantidad_programada;
   if(!(cantidad>0)) return { error: null };
   const loteProducto = (item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
   const { error } = await sb.from('kardex_movimientos').insert({
     item_codigo: row.item_codigo, fecha: row.fecha, lote: loteProducto,
-    comprobante, entra: cantidad, sale: 0
+    comprobante, entra: cantidad, sale: 0,
+    fecha_elaboracion: fElab, fecha_caducidad: fCad // las anota Etiquetado
   });
   return { error: error||null };
+}
+// Tras escribir la cantidad real: si del lote de este producto ya salió más de lo producido
+// (ej. se consumieron 180 discos y solo se hicieron 144), se avisa en el momento.
+async function avisarSiLoteQuedaCorto(row){
+  try{
+    const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo); if(!item) return;
+    const lote = (item.requiere_lote===false) ? 'N/A' : (row.lote || ddMMyy(row.fecha));
+    const { data } = await sb.from('kardex_movimientos').select('entra, sale, comprobante').eq('item_codigo', row.item_codigo).eq('lote', lote);
+    if(!data || !data.length) return;
+    let entra=0, sale=0, producido=0;
+    data.forEach(m=>{ entra+=Number(m.entra||0); sale+=Number(m.sale||0); if(String(m.comprobante||'').startsWith('PRODUCCION')) producido+=Number(m.entra||0); });
+    const falta = Math.round((sale-entra)*10000)/10000;
+    if(falta <= 0.0001) return;
+    await avisar(`Ojo: del lote ${lote} de ${item.nombre} ya se consumieron ${fmtNum(sale)} y solo se produjeron ${fmtNum(producido||entra)}.\n\nFaltan ${fmtNum(falta)}. Revisa la cantidad real o los lotes que se eligieron en las órdenes que lo consumieron.`);
+  }catch(e){ console.warn('No se pudo revisar el lote tras la cantidad real:', e); }
 }
 // Crea una orden con sus ingredientes (filtrados igual que en Cronograma) y su
 // entrada teórica en Kardex. Si algún ingrediente es a su vez un producto con
@@ -4815,7 +5003,7 @@ async function crConfirmAdd(codigo){
     const area = areaSel ? areaSel.value : (sessionStorage.getItem('propizzec_area') || null);
     const resultado = await crCrearOrdenConIngredientes(codigo, cant, planFechaActual, area);
     if(!resultado) return;
-    await Promise.all([ invLoad(true), planLoad(true) ]);
+    await Promise.all([ invLoadStock(), planLoad(true) ]);
     closeModal();
     toast('Orden ' + resultado.orden_produccion + ' agregada');
     renderCronogramaTab();
@@ -4878,13 +5066,13 @@ async function deleteCronogramaRow(id){
     }
     await crEliminarOrdenYSuKardex(id);
     cacheRegistroTodo = null; // invalidar caché de Indicadores
-    await Promise.all([planLoad(true), invLoad(true)]);
+    await Promise.all([planLoad(true), invLoadStock()]);
     toast('Orden eliminada' + (hijas.length ? (', junto con ' + hijas.length + ' preparación(es) previa(s)') : '') + ' y su información de Kardex');
     renderCronogramaTab();
   }catch(e){
     console.error('Error eliminando la orden:', e);
     toast('Algo falló al eliminar — revisa la consola (F12) y avísame qué dice. La orden puede haber quedado a medio borrar.');
-    try{ await Promise.all([planLoad(true), invLoad(true)]); renderCronogramaTab(); }catch(e2){}
+    try{ await Promise.all([planLoad(true), invLoadStock()]); renderCronogramaTab(); }catch(e2){}
   }
 }
 function crRecolectarDescendientes(id, vistos){
@@ -5637,8 +5825,8 @@ async function crConfirmCambioProducto(id, codigo){
   // Corrige también la entrada del producto terminado en Kardex: borra la del
   // producto anterior (mismo comprobante) y la vuelve a crear para el nuevo.
   const rowActualizado = { ...row, item_codigo: codigo, cantidad_real: null };
-  await kardexEscribirProduccionTeorica(rowActualizado);
-  await Promise.all([planLoad(true), invLoad(true)]);
+  await kardexEscribirProduccionTeorica(rowActualizado, { elab: null, cad: null }); // las fechas eran del producto anterior
+  await Promise.all([planLoad(true), invLoadStock()]);
   toast('Producto actualizado');
   closeModalAll();
   openCronogramaForm(id);
@@ -5660,7 +5848,9 @@ async function crActualizarCantidadReal(id, valorTxt){
   if(row){
     const { error } = await kardexEscribirProduccionTeorica(row);
     if(error) toast('Se guardó la cantidad, pero hubo un error al actualizar el Kardex: ' + error.message);
-    await invLoad(true);
+    await invLoadStock();
+    await avisarSiLoteQuedaCorto(row);   // si lo producido es menor que lo ya consumido de ese lote
+    calcularAlertas();                   // la campana se actualiza al instante
     // Se refresca SOLO la lista de ingredientes de esta orden (la teórica
     // depende de esta cantidad) — sin recargar toda la ventana, para no
     // perder nada que se esté escribiendo en otros campos del formulario.
@@ -5856,7 +6046,7 @@ async function crIngDelete(ciId, cronogramaId){
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(rowActual?rowActual.orden_produccion:null, ciActual?ciActual.item_codigo:null, ciId));
   const { error } = await sb.from('cronograma_ingredientes').delete().eq('id', ciId);
   if(error){ toast('Error: '+error.message); return; }
-  await Promise.all([planLoad(true), invLoad(true)]);
+  await Promise.all([planLoad(true), invLoadStock()]);
   pfRenderIngredientes(cronogramaId, crTargetIdIngredientes(cronogramaId));
   toast('Ingrediente eliminado y su Kardex revertido');
  }catch(e){
@@ -6010,7 +6200,7 @@ async function confirmInicioFin(cronogramaIngId, cual){
   // referencia de cuánto se usó, no afecta el Kardex.
   if(!sinLote && patch.lotes_consumidos !== undefined){
     await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteConsumoIngrediente(rowActual?rowActual.orden_produccion:null, ciActual?ciActual.item_codigo:null, cronogramaIngId));
-    await invLoad(true);
+    await invLoadStock();
   }
   // Se actualiza el dato en memoria y solo se vuelve a dibujar la lista de
   // ingredientes correspondiente — sin recargar toda la ventana, para no
@@ -6180,7 +6370,7 @@ async function confirmLotes(cronogramaIngId){
     if(errK) toast('Se guardó el lote, pero hubo un error al descontar del Kardex: ' + errK.message);
     ci0.lotes_consumidos = seleccionados; // se actualiza en memoria, sin recargar toda la ventana
   }
-  await invLoad(true); // refresca los saldos de Kardex (para los selectores de lote de otros ingredientes)
+  await invLoadStock(); // refresca los saldos de Kardex (para los selectores de lote de otros ingredientes)
   closeModal();
   if(row0) pfRenderIngredientes(row0.id, crTargetIdIngredientes(row0.id));
 }
@@ -6215,13 +6405,14 @@ async function kardexEscribirIngredienteConsumo(cronogramaIngId, itemCodigo, fec
 async function kardexRevertirProduccion(row){
   const comprobante = 'PRODUCCION N° ' + (row.orden_produccion||'');
   const comprobanteRechazo = 'RECHAZO PRODUCCION N°' + (row.orden_produccion||row.id);
-  await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
+  const { data: previas } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante).select('fecha_elaboracion, fecha_caducidad');
   await sb.from('kardex_movimientos').delete().eq('comprobante', comprobanteRechazo);
+  const fechasPrevias = (previas && previas[0]) ? { elab: previas[0].fecha_elaboracion || null, cad: previas[0].fecha_caducidad || null } : undefined;
   // No se debe dejar el Kardex en cero: el producto ya se venía usando desde
   // que se creó la orden, así que se restaura la entrada teórica/real en vez
   // de borrarla del todo (si el llamador no trae los datos completos del
-  // cronograma, kardexEscribirProduccionTeorica simplemente no hace nada).
-  await kardexEscribirProduccionTeorica(row);
+  // cronograma, kardexEscribirProduccionTeorica simplemente no hace nada). Las fechas del lote se conservan.
+  await kardexEscribirProduccionTeorica(row, fechasPrevias);
 }
 async function guardarProduccion(cronogramaId){
   const row = (cacheCronograma||[]).find(c=>c.id===cronogramaId);
@@ -6356,14 +6547,14 @@ async function deleteRegistroRow(id){
   await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   closeModal();
-  await Promise.all([regReload(), invLoad(true)]);
+  await Promise.all([regReload(), invLoadStock()]);
   toast('Registro eliminado, junto con su información de Kardex');
 }
 async function deleteRegistroRowFromList(id){
   if(!await confirmar('¿Eliminar esta producción registrada? Esta acción no se puede deshacer y también eliminará su información en Kardex.')) return;
   await crEliminarOrdenYSuKardex(id);
   cacheRegistroTodo = null; // invalidar caché de Indicadores
-  await Promise.all([regReload(), invLoad(true)]);
+  await Promise.all([regReload(), invLoadStock()]);
   toast('Registro eliminado, junto con su información de Kardex');
 }
 
@@ -6559,8 +6750,12 @@ async function etiqAbrirModal(cronogramaId){
     return esFundaEtiquetado(compItem) ? { item_codigo:f.cod_componente, item_nombre:compItem.nombre, medida:compItem.medida } : null;
   }).filter(Boolean);
   if(!componentesME.length){ toast('Este producto no tiene material de empaque definido en su fórmula (Formulación → Ítems)'); return; }
+  // Fechas del lote: se leen de la entrada del producto en el Kardex (única fuente)
+  const { data: entradaK } = await sb.from('kardex_movimientos').select('fecha_elaboracion, fecha_caducidad').eq('comprobante', 'PRODUCCION N° ' + (row.orden_produccion||'')).limit(1);
+  const fechasGuardadas = (entradaK && entradaK[0]) ? { elab: entradaK[0].fecha_elaboracion || null, cad: entradaK[0].fecha_caducidad || null } : { elab: null, cad: null };
   EtiqModalState = {
     cronogramaId,
+    fechasGuardadas,
     rows: componentesME.map(c=>{
       const teorica = pfCantidadTeorica(row, c.item_codigo);
       return { ...c, teorica, cantidad: null, lotes_consumidos: [] };
@@ -6574,6 +6769,11 @@ function etiqRenderModal(){
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
   const loteVal = EtiqModalState.loteProducto!=null ? EtiqModalState.loteProducto : (row.lote || ddMMyy(row.fecha));
+  // Fechas del producto: por defecto elaboración = hoy y caducidad = elaboración + vida útil configurada
+  const vu = vidaUtilDeItem(item);
+  const guardadas = EtiqModalState.fechasGuardadas || { elab:null, cad:null };
+  const fechaElab = guardadas.elab || todayISO();
+  const fechaCad = guardadas.cad || (vu ? sumarVidaUtil(fechaElab, vu.cantidad, vu.unidad) : '');
   openModal(`
     <div class="mhead">
       <span class="sup">Orden de producción</span>
@@ -6586,6 +6786,22 @@ function etiqRenderModal(){
         <input type="text" id="etiqModalLote" value="${escHtml(loteVal)}">
         <div class="sub" style="margin-top:4px;">Si cambias el lote, se actualiza de inmediato en Planificación/Cronograma.</div>
       </div>
+    </div></div>
+
+    <div class="sec turquesa"><div class="sec-h">Fechas del producto</div><div class="sec-b">
+      <div class="field-row">
+        <div class="field">
+          <label>Fecha de elaboración</label>
+          <input type="date" id="etiqFechaElab" value="${escHtml(fechaElab)}" onchange="etiqFechaElabCambio()">
+        </div>
+        <div class="field">
+          <label>Fecha de caducidad</label>
+          <input type="date" id="etiqFechaCad" value="${escHtml(fechaCad)}">
+        </div>
+      </div>
+      <div class="sub" id="etiqVidaUtilTxt" style="margin-top:2px;">${vu
+        ? `Vida útil configurada: <b>${escHtml(vidaUtilTexto(vu.cantidad, vu.unidad))}</b>. La caducidad se calcula sola a partir de la fecha de elaboración (puedes ajustarla a mano).`
+        : 'Este producto no tiene vida útil configurada: escribe la caducidad a mano, o defínela en Configuración → Vida útil de productos para que se calcule sola.'}</div>
     </div></div>
 
     <div class="sec verde"><div class="sec-h">Material de empaque</div><div class="sec-b">
@@ -6621,6 +6837,12 @@ function etiqRenderModal(){
     </div>
   `);
   etiqRenderMeListInner();
+}
+function etiqFechaElabCambio(){
+  const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId); if(!row) return;
+  const vu = vidaUtilDeItem((cacheItems||[]).find(i=>i.codigo===row.item_codigo));
+  const elab = document.getElementById('etiqFechaElab').value;
+  if(vu && elab) document.getElementById('etiqFechaCad').value = sumarVidaUtil(elab, vu.cantidad, vu.unidad);
 }
 function etiqRenderMeListInner(){
   const wrap = document.getElementById('etiqMeList');
@@ -6783,6 +7005,10 @@ async function etiqGuardarModal(){
   if(!row) return;
   const lote = document.getElementById('etiqModalLote').value.trim();
   if(!lote){ toast('El lote del producto no puede quedar vacío'); return; }
+  const fElab = (document.getElementById('etiqFechaElab')||{}).value || null;
+  const fCad = (document.getElementById('etiqFechaCad')||{}).value || null;
+  if(!fElab){ toast('Escribe la fecha de elaboración del producto'); return; }
+  if(fCad && fCad < fElab){ toast('La fecha de caducidad no puede ser anterior a la de elaboración'); return; }
   const observaciones = document.getElementById('etiqModalObs').value;
   const responsable = document.getElementById('etiqModalResp').value;
   const rowsAUsar = EtiqModalState.rows.filter(r=>r.cantidad!=null && r.cantidad>0);
@@ -6790,12 +7016,20 @@ async function etiqGuardarModal(){
   const sinLote = rowsAUsar.filter(r=>!(r.lotes_consumidos||[]).length);
   if(sinLote.length){ toast('Falta elegir el lote de: ' + sinLote.map(r=>r.item_codigo).join(', ')); return; }
 
-  if(lote !== row.lote){
+  const loteCambio = (lote !== row.lote);
+  if(loteCambio){
     const bloqueoLote = await despMensajeBloqueoLote(row.item_codigo, row.lote);
     if(bloqueoLote){ avisar(bloqueoLote); return; }
     const { error: errLote } = await sb.from('cronograma').update({ lote }).eq('id', row.id);
     if(errLote){ toast('Error al actualizar el lote: ' + errLote.message); return; }
     row.lote = lote;
+  }
+  // Fechas del producto: se guardan en la entrada del producto en el Kardex (kardex_movimientos)
+  const previas = EtiqModalState.fechasGuardadas || { elab:null, cad:null };
+  const fechasCambiaron = (fElab !== (previas.elab||null)) || (fCad !== (previas.cad||null));
+  if(fechasCambiaron || loteCambio){
+    const { error: errKP } = await kardexEscribirProduccionTeorica(row, { elab: fElab, cad: fCad }); // el lote del producto en Kardex lleva su lote y sus fechas
+    if(errKP) toast('Se guardó, pero hubo un error al actualizar el lote del producto en el Kardex: ' + errKP.message);
   }
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   for(const r of rowsAUsar){
@@ -6815,7 +7049,7 @@ async function etiqGuardarModal(){
       if(errK){ toast('Se guardó ' + r.item_codigo + ', pero hubo un error al descontar del Kardex: ' + errK.message); }
     }
   }
-  await invLoad(true);
+  await invLoadStock();
   cacheEtiqConEtiquetado.add(row.id); // ya no queda "Pendiente" en la lista
   toast('Etiquetado registrado y descontado del Kardex');
   closeModal();
@@ -6853,7 +7087,7 @@ async function etiqEliminarME(id){
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
-  await invLoad(true);
+  await invLoadStock();
   toast('Registro eliminado y Kardex revertido');
   etiqRenderDetalle();
 }
@@ -6925,7 +7159,7 @@ async function etiqEliminarMEDesdeRegistros(id){
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'ETIQUETADO-'+id);
   const { error } = await sb.from('etiquetado_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
-  await invLoad(true);
+  await invLoadStock();
   cacheEtiqRegistros = (cacheEtiqRegistros||[]).filter(r=>r.id!==id);
   toast('Registro eliminado y Kardex revertido');
   renderEtiqRegistrosList();
@@ -8590,7 +8824,7 @@ async function calCuarResolver(id, nuevoEstado){
       item_codigo: registro.item_codigo, fecha: todayISO(), lote: registro.lote,
       comprobante: 'BAJA-CUARENTENA-' + id, entra:0, sale: registro.cantidad
     });
-    await invLoad(true);
+    await invLoadStock();
   }
   await calCuarLoad();
   toast(nuevoEstado==='aprobado' ? 'Cantidad aprobada — ya está disponible de nuevo' : 'Cantidad descartada y dada de baja');
@@ -9081,7 +9315,7 @@ async function monVerificar(id){
   cr.estado_verificacion = 'aprobado';
   cacheRegistroTodo = null; // invalidar caché de Indicadores
   MonState.selId = null;
-  await Promise.all([monLoad(true), invLoad(true)]);
+  await Promise.all([monLoad(true), invLoadStock()]);
   toast('Verificado — se registró en Kardex');
   monRenderBody();
 }
@@ -9100,7 +9334,7 @@ async function monVolverAVerificar(id){
   cr.finalizado = false; cr.estado_verificacion = 'revisar';
   cacheRegistroTodo = null;
   MonState.selId = null;
-  await Promise.all([monLoad(true), invLoad(true)]);
+  await Promise.all([monLoad(true), invLoadStock()]);
   toast('Enviado de vuelta a Cronograma — marcado como REVISAR');
   monRenderBody();
 }
@@ -9266,7 +9500,7 @@ async function monRegDeleteFromList(id){
   await sb.from('registro_produccion').delete().eq('id', id);
   if(reg.cronograma_id) await crEliminarOrdenYSuKardex(reg.cronograma_id); // también borra ingredientes/personal/paradas de esa orden, no deja nada suelto
   cacheRegistroTodo = null;
-  await Promise.all([monLoad(true), invLoad(true)]);
+  await Promise.all([monLoad(true), invLoadStock()]);
   toast('Registro eliminado de todas las páginas relacionadas');
   monRenderBody();
 }
@@ -9446,10 +9680,10 @@ async function monRegToggleLocked(){
         comprobante: comprobanteRechazo, entra: 0, sale: cantidadRechazo
       });
       if(errK){ toast('Registro cerrado, pero no se pudo descontar del Kardex: ' + errK.message); }
-      await invLoad(true);
+      await invLoadStock();
     }
   } else {
-    await invLoad(true);
+    await invLoadStock();
   }
   toast(nuevoValor ? 'Registro cerrado' : 'Registro reabierto');
   renderMonRegistroEditor();
@@ -9463,7 +9697,7 @@ async function monRegDelete(){
   const { error } = await sb.from('registro_produccion').delete().eq('id', reg.id);
   if(error){ toast('Error: '+error.message); return; }
   await sb.from('kardex_movimientos').delete().eq('comprobante', 'RECHAZO PRODUCCION N°' + (reg.orden_produccion||reg.id));
-  await invLoad(true);
+  await invLoadStock();
   toast('Registro eliminado');
   cacheRegistroTodo = null;
   MonRegState.editing = null;
@@ -9903,6 +10137,57 @@ async function cfgRemovePersonal(id){
   cachePersonalPlanificacion = (cachePersonalPlanificacion||[]).filter(p=>p.id!==id);
   cfgRenderBody();
 }
+/* ===== Configuración: vida útil de los productos (caducidad) ===== */
+function cfgProductosActivos(){
+  return (cacheItems||[]).filter(i=>i.tipo==='PRODUCTO_VENTA' && i.activo!==false).slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+}
+function cfgVidaUtilFila(i){
+  const vu = vidaUtilDeItem(i);
+  return `<div class="cfg-row vu-fila" data-q="${escHtml((i.codigo+' '+i.nombre).toUpperCase())}" style="display:flex;align-items:center;gap:8px;">
+    <span style="flex:1;min-width:0;"><b>${escHtml(i.codigo)}</b> ${escHtml(i.nombre)}</span>
+    <input type="number" min="1" step="1" inputmode="numeric" id="vuC_${escHtml(i.codigo)}" value="${vu?vu.cantidad:''}" placeholder="0" style="width:64px;text-align:center;padding:6px;border:1px solid var(--line);border-radius:6px;" onchange="cfgSetVidaUtil('${escHtml(i.codigo)}')">
+    <select id="vuU_${escHtml(i.codigo)}" style="width:104px;" onchange="cfgSetVidaUtil('${escHtml(i.codigo)}')">
+      <option value="">Unidad…</option>
+      ${VIDA_UTIL_UNIDADES.map(u=>`<option value="${u[0]}" ${vu&&vu.unidad===u[0]?'selected':''}>${u[1]}</option>`).join('')}
+    </select>
+  </div>`;
+}
+function cfgVidaUtilCard(){
+  const prods = cfgProductosActivos();
+  return `<div class="card" style="--accent:var(--traza)">
+    <h2>Vida útil de productos (caducidad)</h2>
+    <div class="sub">Cuánto dura cada producto. En Etiquetado, la fecha de caducidad se calcula sola: fecha de elaboración + esta vida útil. Escribe el número y elige la unidad (días, semanas, meses o años).</div>
+    <div class="field"><input type="text" id="cfgVuBuscar" placeholder="Buscar producto por código o nombre…" oninput="cfgVidaUtilFiltrar(this.value)"></div>
+    <div class="catalog-mini" id="cfgVuLista">
+      ${prods.length ? prods.map(cfgVidaUtilFila).join('') : '<div class="empty-state">No hay productos activos</div>'}
+    </div>
+  </div>`;
+}
+function cfgVidaUtilFiltrar(q){
+  q = (q||'').trim().toUpperCase();
+  document.querySelectorAll('#cfgVuLista .vu-fila').forEach(f=>{ f.style.display = (!q || f.dataset.q.includes(q)) ? 'flex' : 'none'; });
+}
+async function cfgSetVidaUtil(codigo){
+  const inC = document.getElementById('vuC_'+codigo), inU = document.getElementById('vuU_'+codigo);
+  if(!inC || !inU) return;
+  const textoC = (inC.value||'').trim(), unidad = inU.value || '';
+  let cantidad = null, unidadFinal = null;
+  if(textoC === '' && unidad === ''){ /* se quita la vida útil de este producto */ }
+  else {
+    cantidad = parseInt(textoC, 10);
+    if(!(cantidad > 0)){ toast('Escribe un número mayor que cero'); return; }
+    if(!unidad){ toast('Elige la unidad (días, semanas, meses o años)'); return; }
+    unidadFinal = unidad; inC.value = String(cantidad);
+  }
+  const { error } = await sb.from('items').update({ vida_util_cantidad: cantidad, vida_util_unidad: unidadFinal }).eq('codigo', codigo);
+  if(error){
+    toast(/vida_util/.test(error.message||'') ? 'Falta correr en Supabase la migración 48 (vida útil de productos).' : 'Error: ' + error.message);
+    return;
+  }
+  const it = (cacheItems||[]).find(i=>i.codigo===codigo);
+  if(it){ it.vida_util_cantidad = cantidad; it.vida_util_unidad = unidadFinal; }
+  toast(cantidad ? ('Vida útil guardada: ' + vidaUtilTexto(cantidad, unidadFinal)) : 'Vida útil quitada');
+}
 function cfgMetasSelladoCard(){
   const metas = cacheMetasSellado || [];
   return `<div class="card" style="--accent:var(--materia)">
@@ -10109,6 +10394,7 @@ async function cfgRenderBody(){
   }
   html += cfgTiposMedidasCard(); // Inventario: siempre visible, todas las áreas lo tienen
   if(puede('sellado')) html += cfgMetasSelladoCard();
+  if(puede('etiquetado')) html += cfgVidaUtilCard(); // solo los productos (PT) activos
   if(puede('planificacion')){
     html += cfgPersonalCard();
     html += cfgSimpleCard('Motivos de Parada','motivo_parada','--paradas');
@@ -10474,7 +10760,8 @@ async function selCargarPendientesSellado(){
     const cantidadReal = p.cantidad_real!=null ? Number(p.cantidad_real) : (p.cantidad_programada!=null ? Number(p.cantidad_programada) : 0);
     if(cantidadReal<=0) return;
     const clave = normalizaNombre(p.item_codigo)+'|'+normalizaNombre(p.lote||'');
-    if(!porClave[clave]) porClave[clave] = { item_codigo:p.item_codigo, lote:p.lote, producido:0 };
+    if(!porClave[clave]) porClave[clave] = { item_codigo:p.item_codigo, lote:p.lote, producido:0, fecha:p.fecha };
+    if(p.fecha && (!porClave[clave].fecha || p.fecha < porClave[clave].fecha)) porClave[clave].fecha = p.fecha;
     porClave[clave].producido += cantidadReal;
   });
   const pendientes = [];
@@ -10483,7 +10770,7 @@ async function selCargarPendientesSellado(){
     const pendiente = Math.round((p.producido - yaSellado)*10000)/10000;
     if(pendiente > 0.001){
       const item = (cacheItems||[]).find(i=>i.codigo===p.item_codigo);
-      pendientes.push({ item_codigo:p.item_codigo, item_nombre: item?item.nombre:p.item_codigo, lote:p.lote, pendiente, producido:p.producido, medida: item?item.medida:'' });
+      pendientes.push({ item_codigo:p.item_codigo, item_nombre: item?item.nombre:p.item_codigo, lote:p.lote, pendiente, producido:p.producido, medida: item?item.medida:'', fecha:p.fecha });
     }
   });
   cacheSelladoPorLote = selladoPorClave; // cuánto se ha sellado de verdad por ítem+lote, esté o no ya completo — lo usa Despacho para no ofrecer más de lo que realmente está sellado
@@ -11267,7 +11554,7 @@ async function selReetRegistrar(tipo){
   const items = (row.items||[]).concat([nuevo]);
   await sb.from('sellado_registros').update({ items, updated_at: new Date().toISOString() }).eq('id', row.id);
   row.items = items;
-  await invLoad(true);
+  await invLoadStock();
   ReetState = { subtipo, signo:'mas', origen:null, destino:null, unico:null };
   toast('Registrado y aplicado al Kardex');
   selRenderReetrabajo(tipo, row);
@@ -11371,7 +11658,7 @@ async function selDeleteItem(tipo, itemId){
   const it = (row.items||[]).find(i=>i.id===itemId);
   if(it && it.cartones && it.cartones.length){
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'SELLADO-CARTON ' + it.id);
-    await invLoad(true);
+    await invLoadStock();
   }
   row.items = (row.items||[]).filter(i=>i.id!==itemId);
   await selPersistItems(tipo);
@@ -11886,7 +12173,7 @@ async function saveSelItemModal(tipo, itemId){
     it.cartones = SelCartonState.cartones;
     const { error: errCarton } = await selGuardarCartonesKardex(it);
     if(errCarton){ toast('Se guardó, pero hubo un error al descontar los cartones del Kardex: ' + errCarton.message); }
-    await invLoad(true);
+    await invLoadStock();
   }
   await selPersistItems(tipo);
   await selCargarPendientesSellado(); // recalcular pendientes ya que se selló algo nuevo
@@ -12145,11 +12432,11 @@ async function selRegEliminar(rowId, itemId){
     for(const c of it.comprobantes){
       await sb.from('kardex_movimientos').delete().eq('comprobante', c);
     }
-    await invLoad(true);
+    await invLoadStock();
   }
   if(!esReetrabajo && it.cartones && it.cartones.length){
     await sb.from('kardex_movimientos').delete().eq('comprobante', 'SELLADO-CARTON ' + it.id);
-    await invLoad(true);
+    await invLoadStock();
   }
   const items = (row.items||[]).filter(i=>i.id!==itemId);
   const { error } = await sb.from('sellado_registros').update({ items, updated_at: new Date().toISOString() }).eq('id', row.id);
@@ -12747,7 +13034,7 @@ async function bodGuardarRegistro(){
   if(itemsValidos.length < (d.items||[]).length){
     toast('Atención: ' + ((d.items||[]).length - itemsValidos.length) + ' ítem(s) con cantidad 0 no se enviaron al Kardex.');
   }
-  await invLoad(true);
+  await invLoadStock();
   BodState.draft = null;
   toast('Recepción guardada en Registros y en Kardex');
   BodState.tab = 'registros';
@@ -12863,7 +13150,7 @@ async function bodEliminar(id){
   }
   const { error } = await sb.from('bodega_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
-  await Promise.all([bodRegReload(), invLoad(true)]);
+  await Promise.all([bodRegReload(), invLoadStock()]);
   toast('Compra eliminada, junto con su información de Kardex');
 }
 function bodImprimir(id){
@@ -13454,7 +13741,7 @@ async function despGuardarRegistro(){
     const { error: errK } = await sb.from('kardex_movimientos').insert(movimientos);
     if(errK){ toast('Registro guardado, pero hubo un error al descontar del Kardex: ' + errK.message); }
   }
-  await invLoad(true);
+  await invLoadStock();
   DespState.draft = null;
   toast('Despacho guardado en Registros y descontado del Kardex');
   DespState.tab = 'registros';
@@ -13558,7 +13845,7 @@ async function despEliminar(id){
   }
   const { error } = await sb.from('despacho_registros').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
-  await Promise.all([despRegReload(), invLoad(true)]);
+  await Promise.all([despRegReload(), invLoadStock()]);
   toast('Despacho eliminado y Kardex revertido');
 }
 function despFlattenItemsPorLote(items){
