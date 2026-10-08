@@ -724,7 +724,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.06-4</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.07-11</div>
     </div>
   </nav>
 
@@ -2724,7 +2724,8 @@ const TABLAS_SINCRONIZADAS = [
   'bodega_registros','catalogos','producto_codigos_cliente','metas_sellado',
   'personal_planificacion','sellado_config_actividades','despacho_destinos',
   'bodega_proveedores','bodega_conductores','config_horarios','usuarios_area',
-  'items','formulacion','medidas','tipos_item'
+  'items','formulacion','medidas','tipos_item',
+  'etiquetado_ordenes','etiquetado_bajas','etiquetado_devoluciones'
 ];
 let canalSincronizacion = null;
 let sincTimer = null;
@@ -2807,6 +2808,7 @@ function aplicarCambioEnCache(tabla, payload){
 // no se está mirando).
 const REFRESCO_GRANULAR_POR_TABLA = {
   cronograma: ()=>{
+    selRefrescarModalAbierto(); // lo producido cambió: el "por sellar" de una ventana abierta también
     if(currentModule==='planificacion' && PlanState && PlanState.tab==='cronograma'){ renderCronogramaTab(); }
     // Monitoreo también se dibuja a partir de cacheCronograma (ya al día) —
     // solo si se está viendo la lista, no en medio de verificar una orden.
@@ -2839,6 +2841,7 @@ const REFRESCO_GRANULAR_POR_TABLA = {
   },
   sellado_registros: ()=>{
     if(currentModule==='sellado' && SelTabState && SelTabState.tab==='actividades'){ selRenderActividades(); }
+    selRefrescarModalAbierto(); // si hay una ventana de sellado abierta, su "por sellar" se actualiza
     // Desperdicios (en Calidad) incluye lo que se da de baja desde Sellado →
     // Ajuste — si se está viendo esa pestaña, se vuelve a calcular y dibujar.
     if(currentModule==='calidad' && CalState && CalState.tab==='bajasmermas'){ renderCalBajasMermasTab(); }
@@ -2854,7 +2857,23 @@ const REFRESCO_GRANULAR_POR_TABLA = {
     if(currentModule==='despacho' && DespState && DespState.tab==='registros'){ despRenderRegistrosList(); return true; }
     return true;
   },
+  // Tablas nuevas de Etiquetado: se refresca solo la lista que se esté viendo (Etiquetado → Registros o Calidad → Etiqueta)
+  etiquetado_ordenes: ()=>{
+    if(currentModule==='etiquetado' && EtiqState && EtiqState.tab==='registros'){ etiqRegLoad(); }
+    if(currentModule==='calidad' && CalState && CalState.tab==='etiqueta'){ calEtqCargar(); }
+    return true;
+  },
+  etiquetado_bajas: ()=>{
+    if(currentModule==='etiquetado' && EtiqState && EtiqState.tab==='registros'){ etiqRegLoad(); }
+    return true;
+  },
+  etiquetado_devoluciones: ()=>{
+    if(currentModule==='etiquetado' && EtiqState && EtiqState.tab==='registros'){ etiqRegLoad(); }
+    if(currentModule==='calidad' && CalState && CalState.tab==='etiqueta'){ calEtqCargar(); }
+    return true;
+  },
   etiquetado_registros: ()=>{
+    if(currentModule==='calidad' && CalState && CalState.tab==='etiqueta'){ calEtqCargar(); } // un etiquetado nuevo aparece en Calidad al instante
     if(currentModule!=='etiquetado') return true;
     if(EtiqState.tab === 'registros'){ renderEtiqRegistrosList(); return true; }
     if(EtiqState.tab === 'actividad'){ etiqLoad(true).then(()=>{ if(EtiqState.tab==='actividad') renderEtiqActividadTab(); }); return true; }
@@ -3175,6 +3194,8 @@ async function calcularAlertas(){
   if(perfil === 'logistica') await alertasDeEntregas(alertas, hoy);
   if(perfil === 'sellado') await alertasDeSellado(alertas, hoy);
   if(perfil === 'etiquetado') await alertasDeEtiquetado(alertas, hoy);
+  if(perfil === 'etiquetado' || perfil === 'todo' || perfil === 'produccion') await alertasDeDiferenciaEtiquetado(alertas, areaAl);
+  if(perfil === 'todo') await alertasDeEtiquetadoPorVerificar(alertas); // Calidad / Producción
 
   // Solo se muestran las alertas que llevan a una página que este usuario puede abrir
   const perm = permisoActual();
@@ -3205,7 +3226,7 @@ function renderCampanaAlertas(){
   if(document.getElementById('alertDropdown').classList.contains('show')) renderAlertasDropdownBody();
 }
 function alertIcono(tipo){
-  return { negativo:'➖', caducidad:'⏳', sin_verificar:'🕐', stock_negativo:'📉', incompleta:'📋', despacho_atrasado:'🚨', despacho_sin_lotes:'📦', despacho_listo:'🚚', sellado_pendiente:'📦', etiquetado_pendiente:'🏷️' }[tipo] || '⚠️';
+  return { negativo:'➖', caducidad:'⏳', sin_verificar:'🕐', stock_negativo:'📉', incompleta:'📋', despacho_atrasado:'🚨', despacho_sin_lotes:'📦', despacho_listo:'🚚', sellado_pendiente:'📦', etiquetado_pendiente:'🏷️', etiquetado_diferencia:'⚖️', etiquetado_por_verificar:'✅' }[tipo] || '⚠️';
 }
 function toggleAlertasDropdown(){
   const dd = document.getElementById('alertDropdown');
@@ -3237,7 +3258,7 @@ function renderAlertasPage(){
   const app = document.getElementById('app');
   const grupos = {};
   cacheAlertas.forEach(a=>{ (grupos[a.tipo] = grupos[a.tipo]||[]).push(a); });
-  const titulos = { negativo:'Cantidades negativas o sospechosas', caducidad:'Lotes por caducar o caducados', sin_verificar:'Órdenes sin verificar hace días', stock_negativo:'Stock en negativo', incompleta:'Producciones sin completar', despacho_atrasado:'Entregas atrasadas sin despachar', despacho_sin_lotes:'Entregas sin lotes asignados', despacho_listo:'Entregas listas para despachar', sellado_pendiente:'Pendientes por sellar de días anteriores', etiquetado_pendiente:'Órdenes por etiquetar de días anteriores' };
+  const titulos = { negativo:'Cantidades negativas o sospechosas', caducidad:'Lotes por caducar o caducados', sin_verificar:'Órdenes sin verificar hace días', stock_negativo:'Stock en negativo', incompleta:'Producciones sin completar', despacho_atrasado:'Entregas atrasadas sin despachar', despacho_sin_lotes:'Entregas sin lotes asignados', despacho_listo:'Entregas listas para despachar', sellado_pendiente:'Pendientes por sellar de días anteriores', etiquetado_pendiente:'Órdenes por etiquetar de días anteriores', etiquetado_diferencia:'Diferencias entre lo etiquetado y lo producido', etiquetado_por_verificar:'Etiquetados por verificar' };
   app.innerHTML = `
     <div class="card" style="--accent:var(--danger)">
       <h2>🔔 Alertas</h2>
@@ -3264,6 +3285,7 @@ async function irAAlerta(alertaId){
   if(!a) return;
   document.getElementById('alertDropdown').classList.remove('show');
   const acc = a.accion;
+  if(acc.tipo === 'etiquetado_diferencia'){ await etiqAbrirDiferencia(acc.cronogramaId, acc.meCodigo); return; }
   if(acc.modulo === 'planificacion'){
     currentModule = 'planificacion';
     document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='planificacion'));
@@ -3285,6 +3307,13 @@ async function irAAlerta(alertaId){
     setActiveTab('produccion');
     await monLoad(true);
     await monAbrirProducto(acc.cronogramaId);
+  } else if(acc.modulo === 'calidad'){
+    currentModule = 'calidad';
+    document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='calidad'));
+    closeSidebar();
+    CalState.tab = acc.tab || 'cuarentena';
+    await renderCalidad();
+    setActiveTab(CalState.tab);
   } else if(acc.modulo === 'despacho'){
     currentModule = 'despacho';
     document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='despacho'));
@@ -3749,6 +3778,7 @@ function invRenderBody(){
    ============================================================ */
 function renderKardexTab(){
   const body = document.getElementById('invBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const soloLectura = !!(permisoActual() && permisoActual().soloKardex);
   const q = InvState.searchKardex.trim().toUpperCase();
   let rows = (cacheStock||[]).filter(r=>r.activo!==false);
@@ -4112,6 +4142,7 @@ let itemsSelected = new Set();
 
 function renderItemsTab(){
   const body = document.getElementById('invBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const q = InvState.searchItems.trim().toUpperCase();
   let rows = (cacheItems||[]).slice();
   if(q) rows = rows.filter(r=> (r.codigo||'').toUpperCase().includes(q) || (r.nombre||'').toUpperCase().includes(q));
@@ -4373,6 +4404,7 @@ let formSelected = new Set();
 
 function renderFormulacionTab(){
   const body = document.getElementById('invBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const q = InvState.searchForm.trim().toUpperCase();
   let rows = groupedFormulacion();
   if(q) rows = rows.filter(r=> r.codigo.toUpperCase().includes(q) || r.nombre.toUpperCase().includes(q));
@@ -4756,6 +4788,7 @@ async function nextOP(){
 
 function renderCronogramaTab(){
   const body = document.getElementById('planBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const areaR = areaPlanRestringida();
   const esHoy = planFechaActual === todayISO();
   body.innerHTML = `
@@ -5650,7 +5683,8 @@ function openCronogramaFormNormal(id){
           </div>
           <div class="field">
             <label>Lote</label>
-            <input type="text" id="pfLote" value="${escHtml(lote)}" onchange="planUpdateField('${id}','lote',this.value)">
+            <input type="text" id="pfLote" value="${escHtml(lote)}" readonly style="background:#F1F5F9;color:#64748B;">
+        <div class="sub" style="margin-top:4px;">${productoTieneFundas(row.item_codigo) ? 'El lote se cambia en Etiquetado.' : 'Este lote queda fijo desde que se crea la orden.'}</div>
           </div>
         </div>
         <div class="pf-row">
@@ -6435,6 +6469,7 @@ async function regLoad(){
 }
 function renderRegistrosTab(){
   const body = document.getElementById('planBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   body.innerHTML = `
     <div class="list-toolbar">
       <div class="search-wrap"><span class="sic">🔎</span>
@@ -6566,6 +6601,7 @@ const ParadasRegState = { desde: todayISO(), hasta: todayISO(), producto:'' };
 let paradasRegRows = null;
 function renderParadasTab(){
   const body = document.getElementById('planBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   body.innerHTML = `
     <div class="field-row" style="margin-bottom:6px;">
       <div class="field"><label>Desde</label><input type="date" id="pdDesde" value="${escHtml(ParadasRegState.desde)}"></div>
@@ -6627,6 +6663,7 @@ function paradasRegRenderList(){
 let EtiqState = { tab:'actividad', fecha: todayISO(), selId:null, q:'', desde:'', hasta:'' };
 let cacheEtiqCronograma = null;
 let cacheEtiqRegistros = null;
+let cacheEtiqVerificados = new Set(); // órdenes cuyo etiquetado ya verificó Calidad (ya no se pueden editar)
 let cacheEtiqConEtiquetado = new Set(); // ids de cronograma que YA tienen al menos un registro de etiquetado
 
 async function renderEtiquetado(){
@@ -6635,6 +6672,7 @@ async function renderEtiquetado(){
   app.innerHTML = `
     <div class="tabbar">
       <button class="tabbtn ${EtiqState.tab==='actividad'?'active':''}" data-tab="actividad" onclick="etiqGoTab('actividad')">Actividad</button>
+      <button class="tabbtn ${EtiqState.tab==='bajas'?'active':''}" data-tab="bajas" onclick="etiqGoTab('bajas')">Bajas</button>
       <button class="tabbtn ${EtiqState.tab==='registros'?'active':''}" data-tab="registros" onclick="etiqGoTab('registros')">Registros</button>
     </div>
     <div id="etiqRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
@@ -6645,6 +6683,7 @@ async function renderEtiquetado(){
 function etiqGoTab(tab){ EtiqState.tab = tab; setActiveTab(tab); etiqRenderBody(); }
 function etiqRenderBody(){
   if(EtiqState.tab === 'registros') return renderEtiqRegistrosTab();
+  if(EtiqState.tab === 'bajas') return renderEtiqBajasTab();
   return renderEtiqActividadTab();
 }
 async function etiqLoad(force){
@@ -6689,7 +6728,7 @@ function renderEtiqActividadTab(){
   body.innerHTML = `
     <div class="card" style="--accent:var(--traza)">
       <h2>🏷️ Etiquetado</h2>
-      <div class="sub">Registra el material de empaque inicial (fundas, plásticos, etc.) y define el lote del producto antes de pasar a Cronograma a ingresar los ingredientes.</div>
+      <div class="sub">Registra el material de empaque (fundas), el lote, las fechas y la foto de evidencia de cada orden. Al guardar, la orden sale de esta lista y queda en Registros.</div>
       <div class="field" style="max-width:200px;margin-bottom:0;">
         <label>Fecha</label>
         <input type="date" value="${escHtml(EtiqState.fecha)}" onchange="etiqCambiarFecha(this.value)">
@@ -6721,7 +6760,8 @@ function etiqRenderOrdenList(){
   const q = (EtiqState.qLista||'').trim().toUpperCase();
   // Si el producto no tiene ninguna funda en su fórmula, no hay nada que registrar
   // aquí — no tiene sentido que aparezca en esta lista.
-  let ordenes = (cacheEtiqCronograma||[]).filter(r=>productoTieneFundas(r.item_codigo));
+  // Solo lo pendiente: al guardar el etiquetado, la orden sale de esta lista y queda en Registros
+  let ordenes = (cacheEtiqCronograma||[]).filter(r=>productoTieneFundas(r.item_codigo) && !(cacheEtiqConEtiquetado && cacheEtiqConEtiquetado.has(r.id)));
   if(q){
     ordenes = ordenes.filter(r=>{
       const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
@@ -6729,7 +6769,7 @@ function etiqRenderOrdenList(){
     });
   }
   ordenes = ordenes.slice().sort((a,b)=>(a._atrasado?0:1)-(b._atrasado?0:1));
-  if(!ordenes.length){ list.innerHTML = '<div class="empty-state">Sin órdenes para esta fecha.</div>'; return; }
+  if(!ordenes.length){ list.innerHTML = '<div class="empty-state">Sin órdenes pendientes de etiquetar.</div>'; return; }
   list.innerHTML = ordenes.map(r=>{
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
     const yaEtiquetado = cacheEtiqConEtiquetado && cacheEtiqConEtiquetado.has(r.id);
@@ -6753,9 +6793,16 @@ async function etiqAbrirModal(cronogramaId){
   // Fechas del lote: se leen de la entrada del producto en el Kardex (única fuente)
   const { data: entradaK } = await sb.from('kardex_movimientos').select('fecha_elaboracion, fecha_caducidad').eq('comprobante', 'PRODUCCION N° ' + (row.orden_produccion||'')).limit(1);
   const fechasGuardadas = (entradaK && entradaK[0]) ? { elab: entradaK[0].fecha_elaboracion || null, cad: entradaK[0].fecha_caducidad || null } : { elab: null, cad: null };
+  let evidencia = null, evidenciaUrl = null;
+  try{
+    const { data: eo } = await sb.from('etiquetado_ordenes').select('evidencia, evidencia_url').eq('cronograma_id', row.id).maybeSingle();
+    evidencia = (eo && (eo.evidencia_url || eo.evidencia)) || null;
+    evidenciaUrl = (eo && eo.evidencia_url) || null;
+  }catch(_){ /* si la tabla aún no existe, simplemente no hay foto guardada */ }
   EtiqModalState = {
     cronogramaId,
     fechasGuardadas,
+    evidencia, evidenciaGuardada: evidencia, evidenciaUrlGuardada: evidenciaUrl, evidenciaBlob: null,
     rows: componentesME.map(c=>{
       const teorica = pfCantidadTeorica(row, c.item_codigo);
       return { ...c, teorica, cantidad: null, lotes_consumidos: [] };
@@ -6786,9 +6833,6 @@ function etiqRenderModal(){
         <input type="text" id="etiqModalLote" value="${escHtml(loteVal)}">
         <div class="sub" style="margin-top:4px;">Si cambias el lote, se actualiza de inmediato en Planificación/Cronograma.</div>
       </div>
-    </div></div>
-
-    <div class="sec turquesa"><div class="sec-h">Fechas del producto</div><div class="sec-b">
       <div class="field-row">
         <div class="field">
           <label>Fecha de elaboración</label>
@@ -6799,9 +6843,14 @@ function etiqRenderModal(){
           <input type="date" id="etiqFechaCad" value="${escHtml(fechaCad)}">
         </div>
       </div>
-      <div class="sub" id="etiqVidaUtilTxt" style="margin-top:2px;">${vu
+      <div class="sub" id="etiqVidaUtilTxt" style="margin:-4px 0 10px;">${vu
         ? `Vida útil configurada: <b>${escHtml(vidaUtilTexto(vu.cantidad, vu.unidad))}</b>. La caducidad se calcula sola a partir de la fecha de elaboración (puedes ajustarla a mano).`
         : 'Este producto no tiene vida útil configurada: escribe la caducidad a mano, o defínela en Configuración → Vida útil de productos para que se calcule sola.'}</div>
+      <div class="field">
+        <label>Evidencia (foto)</label>
+        <input type="file" id="etiqEvidInput" accept="image/*" onchange="etiqEvidenciaSeleccionada(this)">
+        <div id="etiqEvidVista" style="margin-top:8px;">${etiqEvidenciaHtml(EtiqModalState.evidencia)}</div>
+      </div>
     </div></div>
 
     <div class="sec verde"><div class="sec-h">Material de empaque</div><div class="sec-b">
@@ -6837,6 +6886,65 @@ function etiqRenderModal(){
     </div>
   `);
   etiqRenderMeListInner();
+}
+// Foto de evidencia: se reduce (máx. 1280 px, JPEG) para que pese poco y no sature la sincronización en vivo
+function etiqComprimirImagen(file, maxLado, calidad){
+  maxLado = maxLado || 1280; calidad = calidad || 0.72;
+  return new Promise((resolve, reject)=>{
+    const url = URL.createObjectURL(file), img = new Image();
+    img.onload = ()=>{
+      const k = Math.min(1, maxLado / Math.max(img.width, img.height));
+      const cv = document.createElement('canvas'); cv.width = Math.round(img.width*k); cv.height = Math.round(img.height*k);
+      cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+      URL.revokeObjectURL(url);
+      cv.toBlob(blob=>resolve({ dataUrl: cv.toDataURL('image/jpeg', calidad), blob }), 'image/jpeg', calidad); // la vista previa y el archivo que se sube
+    };
+    img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
+    img.src = url;
+  });
+}
+// Sube la foto a Storage (carpeta "evidencias") y devuelve su enlace público
+async function etiqSubirEvidencia(cronogramaId, blob){
+  try{
+    const ruta = 'etiquetado/' + cronogramaId + '/' + Date.now() + '.jpg';
+    const { error } = await sb.storage.from('evidencias').upload(ruta, blob, { contentType:'image/jpeg', upsert:false });
+    if(error) return { url:null, error };
+    const { data } = sb.storage.from('evidencias').getPublicUrl(ruta);
+    return { url: data && data.publicUrl, ruta };
+  }catch(e){ return { url:null, error:e }; }
+}
+function etiqBorrarEvidenciaStorage(url){
+  try{
+    const m = String(url||'').match(/\/evidencias\/(.+)$/);
+    if(m) sb.storage.from('evidencias').remove([decodeURIComponent(m[1])]);
+  }catch(e){}
+}
+function etiqEvidenciaHtml(src){
+  return src
+    ? `<div style="display:flex;align-items:center;gap:10px;"><img src="${src}" alt="Evidencia" style="height:64px;border-radius:8px;border:1px solid var(--line);"><button class="btn ghost" type="button" onclick="etiqEvidenciaQuitar()">Quitar foto</button></div>`
+    : '<div class="sub">Sin foto adjunta.</div>';
+}
+async function etiqEvidenciaSeleccionada(input){
+  const file = input.files && input.files[0]; if(!file) return;
+  if(!/^image\//.test(file.type||'')){ toast('Elige una foto (imagen)'); input.value=''; return; }
+  try{
+    const foto = await etiqComprimirImagen(file);
+    EtiqModalState.evidencia = foto.dataUrl; EtiqModalState.evidenciaBlob = foto.blob;
+    const v = document.getElementById('etiqEvidVista'); if(v) v.innerHTML = etiqEvidenciaHtml(EtiqModalState.evidencia);
+    toast('Foto adjuntada');
+  }catch(e){ toast('No se pudo cargar la foto: ' + e.message); }
+  input.value = '';
+}
+function etiqEvidenciaQuitar(){
+  EtiqModalState.evidencia = null; EtiqModalState.evidenciaBlob = null;
+  const v = document.getElementById('etiqEvidVista'); if(v) v.innerHTML = etiqEvidenciaHtml(null);
+}
+// Si el producto ya tiene unidades selladas con este lote, cambiar el lote dejaría los registros de Sellado con el lote anterior
+async function etiqMensajeBloqueoSellado(itemCodigo, lote){
+  try{ await selCargarPendientesSellado(); }catch(e){ return null; }
+  const n = Number((cacheSelladoPorLote||{})[normalizaNombre(itemCodigo)+'|'+normalizaNombre(lote||'')] || 0);
+  if(!(n > 0)) return null;
+  return 'Este producto (lote ' + (lote||'sin lote') + ') ya tiene ' + fmtNum(n) + ' unidades selladas en Sellado. No se puede cambiar el lote desde aquí porque esos registros quedarían con el lote anterior. Para cambiarlo usa Sellado → Ajuste → Reetiquetado (mueve la cantidad al lote correcto en el Kardex).';
 }
 function etiqFechaElabCambio(){
   const row = (cacheEtiqCronograma||[]).find(r=>r.id===EtiqModalState.cronogramaId); if(!row) return;
@@ -7020,6 +7128,8 @@ async function etiqGuardarModal(){
   if(loteCambio){
     const bloqueoLote = await despMensajeBloqueoLote(row.item_codigo, row.lote);
     if(bloqueoLote){ avisar(bloqueoLote); return; }
+    const bloqueoSellado = await etiqMensajeBloqueoSellado(row.item_codigo, row.lote);
+    if(bloqueoSellado){ avisar(bloqueoSellado); return; }
     const { error: errLote } = await sb.from('cronograma').update({ lote }).eq('id', row.id);
     if(errLote){ toast('Error al actualizar el lote: ' + errLote.message); return; }
     row.lote = lote;
@@ -7030,6 +7140,25 @@ async function etiqGuardarModal(){
   if(fechasCambiaron || loteCambio){
     const { error: errKP } = await kardexEscribirProduccionTeorica(row, { elab: fElab, cad: fCad }); // el lote del producto en Kardex lleva su lote y sus fechas
     if(errKP) toast('Se guardó, pero hubo un error al actualizar el lote del producto en el Kardex: ' + errKP.message);
+  }
+  // Foto de evidencia: una por orden
+  // La foto va a Storage (carpeta "evidencias") y la tabla guarda solo su enlace. Si Storage no estuviera disponible,
+  // se guarda dentro de la tabla como antes, para no perder la foto.
+  const evid = EtiqModalState.evidencia || null;
+  if(evid !== (EtiqModalState.evidenciaGuardada || null)){
+    const parche = { cronograma_id: row.id, updated_at: new Date().toISOString() };
+    if(evid && EtiqModalState.evidenciaBlob){
+      const sub = await etiqSubirEvidencia(row.id, EtiqModalState.evidenciaBlob);
+      if(sub.url){ parche.evidencia_url = sub.url; parche.evidencia = null; }
+      else { parche.evidencia = evid; parche.evidencia_url = null; toast('La foto se guardó dentro de la tabla porque Storage no respondió.'); }
+    } else if(!evid){ parche.evidencia = null; parche.evidencia_url = null; }
+    let { error: errEv } = await sb.from('etiquetado_ordenes').upsert(parche, { onConflict: 'cronograma_id' });
+    if(errEv && /evidencia_url/.test(errEv.message||'')){ // por si aún no existe la columna del enlace: se usa la forma anterior
+      const viejo = { cronograma_id: row.id, evidencia: evid, updated_at: parche.updated_at };
+      ({ error: errEv } = await sb.from('etiquetado_ordenes').upsert(viejo, { onConflict: 'cronograma_id' }));
+    }
+    if(errEv) toast(/etiquetado_ordenes/.test(errEv.message||'') ? 'La foto no se guardó: falta crear la tabla de evidencias en Supabase. El resto del etiquetado sí se guarda.' : 'Error al guardar la foto: ' + errEv.message);
+    else if(EtiqModalState.evidenciaUrlGuardada && EtiqModalState.evidenciaUrlGuardada !== parche.evidencia_url) etiqBorrarEvidenciaStorage(EtiqModalState.evidenciaUrlGuardada); // la foto anterior ya no se usa
   }
   const item = (cacheItems||[]).find(i=>i.codigo===row.item_codigo);
   for(const r of rowsAUsar){
@@ -7051,9 +7180,11 @@ async function etiqGuardarModal(){
   }
   await invLoadStock();
   cacheEtiqConEtiquetado.add(row.id); // ya no queda "Pendiente" en la lista
-  toast('Etiquetado registrado y descontado del Kardex');
+  const hayDif = (await etiqCalcularDiferencias({ cronogramaId: row.id })).length > 0;
+  toast(hayDif ? 'Etiquetado registrado, pero la cantidad no cuadra con lo producido: revisa la campana' : 'Etiquetado registrado y descontado del Kardex');
   closeModal();
   etiqRenderOrdenList();
+  calcularAlertas();
 }
 async function etiqActualizarLote(cronogramaId, lote){
   lote = (lote||'').trim();
@@ -7076,9 +7207,21 @@ function etiqRenderMeListHtml(registros){
 }
 // Un registro de etiquetado es de un producto+lote: si ese lote ya se despachó, no se puede eliminar.
 async function etiqBloqueoRegistro(id){
-  const { data } = await sb.from('etiquetado_registros').select('item_codigo, lote_producto').eq('id', id).single();
+  const { data } = await sb.from('etiquetado_registros').select('item_codigo, lote_producto, cronograma_id').eq('id', id).single();
   if(!data) return null;
+  const verif = await etiqMensajeBloqueoVerificado(data.cronograma_id);
+  if(verif) return verif;
   return await despMensajeBloqueoLote(data.item_codigo, data.lote_producto);
+}
+// Si Calidad ya verificó el etiquetado de una orden, Etiquetado ya no puede cambiarlo
+async function etiqMensajeBloqueoVerificado(cronogramaId){
+  if(!cronogramaId) return null;
+  try{
+    const { data } = await sb.from('etiquetado_ordenes').select('estado_verificacion').eq('cronograma_id', cronogramaId).maybeSingle();
+    if(data && data.estado_verificacion === 'aprobado')
+      return 'Este etiquetado ya fue verificado por Calidad. Ya no se puede editar ni eliminar. Para corregirlo, Calidad debe reabrirlo en Calidad → Etiqueta → Registros → Reabrir.';
+  }catch(e){}
+  return null;
 }
 async function etiqEliminarME(id){
   const bloqueo = await etiqBloqueoRegistro(id);
@@ -7090,6 +7233,388 @@ async function etiqEliminarME(id){
   await invLoadStock();
   toast('Registro eliminado y Kardex revertido');
   etiqRenderDetalle();
+}
+
+/* ================= Etiquetado · completar fechas de lotes ya etiquetados ================= */
+// Lotes que se etiquetaron antes de que existieran las fechas: se SUGIERE elaboración = fecha de la orden y caducidad = elaboración + vida útil.
+// Nada se aplica solo: se revisa y se marca lo que se quiere guardar. Los ya verificados por Calidad no se tocan.
+let EtiqFechasFalt = [];
+async function etiqCalcularFechasFaltantes(){
+  if(!cacheItems) await invLoad(false);
+  const { data: regs } = await sb.from('etiquetado_registros').select('cronograma_id, orden_produccion, item_codigo, item_nombre, lote_producto, fecha').order('fecha', { ascending:false }).limit(1000);
+  const porOrden = {}; (regs||[]).forEach(r=>{ if(!porOrden[r.cronograma_id]) porOrden[r.cronograma_id] = r; });
+  const ordenes = Object.values(porOrden).slice(0, 240);
+  if(!ordenes.length) return [];
+  const ver = await sb.from('etiquetado_ordenes').select('cronograma_id').eq('estado_verificacion', 'aprobado');
+  const verificados = new Set((ver.error ? [] : (ver.data||[])).map(x=>x.cronograma_id));
+  const porComp = {};
+  for(let i = 0; i < ordenes.length; i += 80){ // de a 80, para que la consulta no sea demasiado larga
+    const { data } = await sb.from('kardex_movimientos').select('comprobante, fecha_elaboracion, fecha_caducidad').in('comprobante', ordenes.slice(i, i+80).map(o=>'PRODUCCION N° ' + o.orden_produccion));
+    (data||[]).forEach(e=>{ porComp[e.comprobante] = e; });
+  }
+  const out = [];
+  ordenes.forEach(o=>{
+    if(verificados.has(o.cronograma_id)) return;
+    const e = porComp['PRODUCCION N° ' + o.orden_produccion];
+    if(!e) return; // sin entrada en el Kardex no hay dónde guardar las fechas
+    if(e.fecha_elaboracion && e.fecha_caducidad) return;
+    const vu = vidaUtilDeItem((cacheItems||[]).find(i=>i.codigo===o.item_codigo));
+    const elab = e.fecha_elaboracion || o.fecha;
+    const cad = e.fecha_caducidad || (vu ? sumarVidaUtil(elab, vu.cantidad, vu.unidad) : '');
+    out.push({ cronogramaId:o.cronograma_id, op:o.orden_produccion, codigo:o.item_codigo, nombre:o.item_nombre, lote:o.lote_producto, elab, cad, vu: !!vu });
+  });
+  return out;
+}
+async function etiqActualizarBannerFechas(){
+  const b = document.getElementById('etiqFechasBanner'); if(!b) return;
+  EtiqFechasFalt = await etiqCalcularFechasFaltantes();
+  const banner = document.getElementById('etiqFechasBanner'); if(!banner) return;
+  banner.innerHTML = EtiqFechasFalt.length ? `<div class="card" style="--accent:#B45309;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;">
+    <div style="flex:1;"><b>${EtiqFechasFalt.length} lote(s) etiquetado(s) sin fechas</b><div class="sub">Se etiquetaron antes de que existieran la elaboración y la caducidad.</div></div>
+    <button class="btn" onclick="etiqAbrirCompletarFechas()">Completar</button></div></div>` : '';
+}
+function etiqAbrirCompletarFechas(){
+  if(!EtiqFechasFalt.length) return;
+  openModal(`
+    <div class="mhead"><span class="sup">Lotes ya etiquetados</span><h3>Completar fechas</h3><div class="msub">Las fechas son una <b>sugerencia</b>: elaboración = fecha de la orden y caducidad = elaboración + vida útil. Revísalas y marca solo las que quieras guardar.</div></div>
+    <div class="sec ambar"><div class="sec-h">${EtiqFechasFalt.length} lote(s) sin fechas</div><div class="sec-b">
+      ${EtiqFechasFalt.map((f,i)=>`
+        <div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:8px;">
+          <label style="display:flex;align-items:flex-start;gap:8px;font-weight:700;font-size:13px;">
+            <input type="checkbox" id="etqFF_chk_${i}" ${f.cad ? 'checked' : ''} style="margin-top:3px;">
+            <span>${escHtml(f.op)} · ${escHtml(f.nombre)}<br><small style="font-weight:400;color:var(--muted);">${escHtml(f.codigo)} · Lote ${escHtml(f.lote||'—')}</small></span>
+          </label>
+          <div class="field-row" style="margin:6px 0 0;">
+            <div class="field" style="margin-bottom:0;"><label>Elaboración</label><input type="date" id="etqFF_e_${i}" value="${escHtml(f.elab||'')}" onchange="etiqFFCambioElab(${i})"></div>
+            <div class="field" style="margin-bottom:0;"><label>Caducidad</label><input type="date" id="etqFF_c_${i}" value="${escHtml(f.cad||'')}"></div>
+          </div>
+          ${f.vu ? '' : '<div class="sub" style="margin-top:4px;color:#B45309;">Este producto no tiene vida útil configurada: escribe la caducidad a mano.</div>'}
+        </div>`).join('')}
+    </div></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqAplicarFechasFaltantes()">Aplicar a los marcados</button>
+    </div>`);
+}
+function etiqFFCambioElab(i){
+  const f = EtiqFechasFalt[i]; if(!f || !f.vu) return;
+  const vu = vidaUtilDeItem((cacheItems||[]).find(x=>x.codigo===f.codigo));
+  const e = document.getElementById('etqFF_e_' + i).value;
+  if(vu && e) document.getElementById('etqFF_c_' + i).value = sumarVidaUtil(e, vu.cantidad, vu.unidad);
+}
+async function etiqAplicarFechasFaltantes(){
+  const sel = [];
+  for(let i = 0; i < EtiqFechasFalt.length; i++){
+    const chk = document.getElementById('etqFF_chk_' + i); if(!chk || !chk.checked) continue;
+    const elab = document.getElementById('etqFF_e_' + i).value, cad = document.getElementById('etqFF_c_' + i).value;
+    const f = EtiqFechasFalt[i];
+    if(!elab){ toast('Escribe la fecha de elaboración de ' + f.op); return; }
+    if(!cad){ toast('Escribe la fecha de caducidad de ' + f.op + ' (o desmárcalo)'); return; }
+    if(cad < elab){ toast('En ' + f.op + ' la caducidad no puede ser anterior a la elaboración'); return; }
+    sel.push({ f, elab, cad });
+  }
+  if(!sel.length){ toast('No hay ningún lote marcado'); return; }
+  let ok = 0, fallo = 0;
+  for(const s of sel){
+    const { data, error } = await sb.from('kardex_movimientos').update({ fecha_elaboracion: s.elab, fecha_caducidad: s.cad }).eq('comprobante', 'PRODUCCION N° ' + s.f.op).select('id');
+    if(error || !data || !data.length) fallo++; else ok++;
+  }
+  closeModal();
+  toast(ok + ' lote(s) con fechas guardadas' + (fallo ? ' · ' + fallo + ' no se pudieron guardar' : ''));
+  await etiqActualizarBannerFechas();
+  calcularAlertas();
+}
+
+/* ================= Etiquetado · Bajas de material de empaque ================= */
+let EtiqBaja = null;
+function renderEtiqBajasTab(){
+  const root = document.getElementById('etiqRoot');
+  if(!root) return;
+  root.innerHTML = `
+    <div class="card" style="--accent:var(--traza)">
+      <h2>Bajas de material de empaque</h2>
+      <div class="sub">Da de baja el material de empaque que se dañó o se desechó. Sale del Kardex y queda registrado en la pestaña Registros.</div>
+      <div class="field" style="margin-bottom:0;"><label>Buscar material</label>
+        <input type="text" id="etiqBajaBuscar" placeholder="Buscar por código o nombre…" oninput="etiqBajaFiltrar(this.value)"></div>
+    </div>
+    <div class="reg-list" id="etiqBajaLista"></div>`;
+  etiqBajaFiltrar('');
+}
+function etiqBajaFiltrar(q){
+  const lista = document.getElementById('etiqBajaLista'); if(!lista) return;
+  q = (q||'').trim().toUpperCase();
+  let items = (cacheItems||[]).filter(i=>i.tipo==='MATERIAL_EMPAQUE' && i.activo!==false);
+  if(q) items = items.filter(i=>(i.codigo||'').toUpperCase().includes(q) || (i.nombre||'').toUpperCase().includes(q));
+  items.sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+  const total = items.length; items = items.slice(0, 40);
+  if(!items.length){ lista.innerHTML = '<div class="empty-state">Sin materiales de empaque que coincidan</div>'; return; }
+  lista.innerHTML = items.map(i=>`
+    <div class="reg-row" onclick="etiqBajaAbrir('${escHtml(i.codigo)}')">
+      <div class="rmain"><span class="sup">${escHtml(i.codigo)}</span><span class="big">${escHtml(i.nombre)}</span></div>
+      <div class="rval"><span class="sub">${escHtml(i.medida||'')}</span></div>
+    </div>`).join('') + (total>40 ? `<div class="sub" style="text-align:center;margin:8px;">Mostrando 40 de ${total}: escribe para buscar</div>` : '');
+}
+async function etiqBajaAbrir(codigo){
+  const item = (cacheItems||[]).find(i=>i.codigo===codigo); if(!item) return;
+  const { data: raw } = await sb.from('v_kardex_lotes_disponibles').select('*').eq('item_codigo', codigo).order('fecha_ingreso');
+  const lotes = await filtrarLotesDisponibles(codigo, raw||[]);
+  if(!lotes.length){ toast('Este material no tiene lotes disponibles en el Kardex'); return; }
+  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
+  EtiqBaja = { item, lotes };
+  openModal(`
+    <div class="mhead"><span class="sup">${escHtml(item.codigo)}</span><h3>${escHtml(item.nombre)}</h3><div class="msub">Baja de material de empaque</div></div>
+    <div class="sec rojo"><div class="sec-h">Qué se da de baja</div><div class="sec-b">
+      <div class="field"><label>Lote</label>
+        <select id="etiqBajaLote">${lotes.map(l=>`<option value="${escHtml(l.lote)}">Lote ${escHtml(l.lote)} — disponible ${fmtNum(l.cantidad_disponible)} ${escHtml(item.medida||'')}</option>`).join('')}</select></div>
+      <div class="field"><label>Cantidad (${escHtml(item.medida||'')})</label><input type="text" inputmode="decimal" id="etiqBajaCant" placeholder="0"></div>
+      <div class="field"><label>Motivo (opcional)</label><input type="text" id="etiqBajaMotivo" placeholder="Ej: fundas dañadas"></div>
+      <div class="field"><label>Responsable</label><select id="etiqBajaResp"><option value="">Selecciona…</option>${responsables.map(r=>`<option value="${escHtml(r.nombre)}">${escHtml(r.nombre)}</option>`).join('')}</select></div>
+    </div></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--danger)" onclick="etiqBajaGuardar()">Registrar baja</button>
+    </div>`);
+}
+async function etiqBajaGuardar(){
+  if(!EtiqBaja) return;
+  const { item, lotes } = EtiqBaja;
+  const lote = document.getElementById('etiqBajaLote').value;
+  const cantidad = parseFloat((document.getElementById('etiqBajaCant').value||'').replace(',','.'));
+  const motivo = (document.getElementById('etiqBajaMotivo').value||'').trim();
+  const responsable = document.getElementById('etiqBajaResp').value;
+  if(!(cantidad > 0)){ toast('Escribe la cantidad a dar de baja'); return; }
+  const disp = Number((lotes.find(l=>l.lote===lote)||{}).cantidad_disponible||0);
+  if(cantidad > disp + 0.0001){ toast('El lote ' + lote + ' solo tiene ' + fmtNum(disp) + ' disponible'); return; }
+  const { data, error } = await sb.from('etiquetado_bajas').insert({ fecha: todayISO(), item_codigo: item.codigo, item_nombre: item.nombre, lote, cantidad, motivo: motivo||null, responsable: responsable||null }).select().single();
+  if(error){ toast('Error al registrar la baja: ' + error.message); return; }
+  const { error: errK } = await sb.from('kardex_movimientos').insert({ item_codigo: item.codigo, fecha: todayISO(), lote, comprobante: 'BAJA-EMPAQUE-' + data.id, entra: 0, sale: cantidad });
+  if(errK) toast('Se registró la baja, pero hubo un error al descontar del Kardex: ' + errK.message);
+  await invLoadStock();
+  EtiqBaja = null; closeModal();
+  toast('Baja registrada y descontada del Kardex');
+}
+async function etiqBajaEliminar(id){
+  if(!await confirmar('¿Eliminar esta baja? La cantidad volverá al Kardex.')) return;
+  await sb.from('kardex_movimientos').delete().eq('comprobante', 'BAJA-EMPAQUE-' + id);
+  const { error } = await sb.from('etiquetado_bajas').delete().eq('id', id);
+  if(error){ toast('Error: ' + error.message); return; }
+  await invLoadStock();
+  cacheEtiqRegistros = (cacheEtiqRegistros||[]).filter(r=>!(r._tipo==='baja' && r.id===id));
+  toast('Baja eliminada y Kardex revertido'); renderEtiqRegistrosList();
+}
+
+/* ================= Etiquetado · diferencias con lo producido ================= */
+// Por cada orden etiquetada: lo producido (cantidad real) contra las fundas etiquetadas menos las devueltas.
+// Debe salir una funda por unidad producida. Devuelve una fila por orden y funda que NO cuadra.
+async function etiqCalcularDiferencias(opts){
+  opts = opts || {};
+  const desde = opts.desde || entSumarDias(todayISO(), -30);
+  let regs;
+  if(opts.regs){ regs = opts.regs; }
+  else {
+    let q = sb.from('etiquetado_registros').select('cronograma_id, item_me_codigo, item_me_nombre, lote_me, cantidad');
+    q = opts.cronogramaId ? q.eq('cronograma_id', opts.cronogramaId) : q.gte('fecha', desde);
+    const r = await q;
+    if(r.error) return [];
+    regs = r.data;
+  }
+  if(!regs || !regs.length) return [];
+  const ids = [...new Set(regs.map(r=>r.cronograma_id))];
+  const [ordRes, devRes] = await Promise.all([
+    sb.from('cronograma').select('id, item_codigo, orden_produccion, fecha, area, lote, cantidad_real, cantidad_programada').in('id', ids),
+    sb.from('etiquetado_devoluciones').select('cronograma_id, item_me_codigo, cantidad').in('cronograma_id', ids)
+  ]);
+  const devs = devRes.error ? [] : (devRes.data||[]);
+  const out = [];
+  (ordRes.data||[]).forEach(o=>{
+    if(opts.area && o.area !== opts.area) return;
+    if(o.cantidad_real == null) return; // todavía no se ha reportado lo producido
+    (cacheFormulacion||[]).filter(f=>f.cod_producto_principal===o.item_codigo).forEach(f=>{
+      const me = (cacheItems||[]).find(i=>i.codigo===f.cod_componente);
+      if(!esFundaEtiquetado(me)) return;
+      const esperado = pfCantidadTeorica(o, f.cod_componente);
+      if(esperado == null) return;
+      const mias = regs.filter(r=>r.cronograma_id===o.id && r.item_me_codigo===f.cod_componente);
+      const etiquetado = mias.reduce((s,r)=>s+Number(r.cantidad||0), 0);
+      const devuelto = devs.filter(d=>d.cronograma_id===o.id && d.item_me_codigo===f.cod_componente).reduce((s,d)=>s+Number(d.cantidad||0), 0);
+      const neto = Math.round((etiquetado - devuelto) * 10000) / 10000;
+      const diferencia = Math.round((neto - esperado) * 10000) / 10000;
+      if(Math.abs(diferencia) < 0.0005) return;
+      const it = (cacheItems||[]).find(i=>i.codigo===o.item_codigo);
+      out.push({ cronogramaId:o.id, orden:o.orden_produccion||'', itemCodigo:o.item_codigo, itemNombre: it?it.nombre:o.item_codigo, area:o.area, fecha:o.fecha, lote:o.lote||ddMMyy(o.fecha),
+        meCodigo:f.cod_componente, meNombre: me?me.nombre:f.cod_componente, produccion:Number(o.cantidad_real), esperado, etiquetado, devuelto, neto, diferencia,
+        lotesMe:[...new Set(mias.map(r=>r.lote_me).filter(Boolean))] });
+    });
+  });
+  return out;
+}
+// Calidad: avisa cuántos etiquetados esperan su verificación (y cuántos de ellos todavía no se pueden verificar por tener diferencia)
+async function alertasDeEtiquetadoPorVerificar(alertas){
+  const [rg, ap] = await Promise.all([
+    sb.from('etiquetado_registros').select('cronograma_id, item_me_codigo, cantidad').limit(5000),
+    sb.from('etiquetado_ordenes').select('cronograma_id').eq('estado_verificacion', 'aprobado')
+  ]);
+  if(rg.error || !rg.data) return;
+  const aprobados = new Set((ap.error ? [] : (ap.data||[])).map(x=>x.cronograma_id));
+  const pendientes = [...new Set(rg.data.map(r=>r.cronograma_id))].filter(id=>!aprobados.has(id));
+  if(!pendientes.length) return;
+  const difs = await etiqCalcularDiferencias({ regs: rg.data.filter(r=>pendientes.includes(r.cronograma_id)) });
+  const conDif = new Set(difs.map(d=>d.cronogramaId)).size;
+  alertas.push({ id:'etq-por-verificar', tipo:'etiquetado_por_verificar', severidad:'media', titulo:'Etiquetados por verificar',
+    detalle: pendientes.length + ' etiquetado(s) esperan la verificación de Calidad' + (conDif ? ' (' + conDif + ' con diferencia por resolver antes)' : ''),
+    accion:{ modulo:'calidad', tab:'etiqueta' } });
+}
+async function alertasDeDiferenciaEtiquetado(alertas, areaAl){
+  const difs = await etiqCalcularDiferencias({ area: areaAl || null });
+  difs.forEach(d=>{
+    const falta = d.diferencia < 0, n = fmtNum(Math.abs(d.diferencia));
+    const extra = Math.abs(d.esperado - d.produccion) > 0.0005 ? ` (se esperaban ${fmtNum(d.esperado)} fundas)` : '';
+    alertas.push({ id:'etqdif-'+d.cronogramaId+'-'+d.meCodigo, tipo:'etiquetado_diferencia', severidad:'alta',
+      titulo: falta ? 'Se etiquetó menos de lo producido' : 'Se etiquetó más de lo producido',
+      detalle: `${d.itemNombre} — ${d.orden}: producidas ${fmtNum(d.produccion)}, etiquetadas ${fmtNum(d.neto)}${extra} (${falta?'faltan':'sobran'} ${n})`,
+      accion: { tipo:'etiquetado_diferencia', cronogramaId:d.cronogramaId, meCodigo:d.meCodigo } });
+  });
+}
+function puedeModulo(mod){ const perm = permisoActual(); return !perm || (perm.modulos||[]).includes(mod); }
+// Ventana que se abre al tocar la alerta: explica la diferencia. "Cancelar" solo la cierra (la alerta sigue activa).
+async function etiqAbrirDiferencia(cronogramaId, meCodigo){
+  if(!cacheItems || !cacheFormulacion) await invLoad(false);
+  const d = (await etiqCalcularDiferencias({ cronogramaId })).find(x=>x.meCodigo===meCodigo);
+  if(!d){ toast('Ya no hay diferencia en esta orden'); calcularAlertas(); return; }
+  const falta = d.diferencia < 0, n = fmtNum(Math.abs(d.diferencia));
+  const puede = puedeModulo('etiquetado');
+  const accion = !puede
+    ? `<button class="btn primary" style="--accent:var(--traza)" onclick="closeModal()">Entendido</button>`
+    : (falta ? `<button class="btn primary" style="--accent:var(--traza)" onclick="etiqIrAEditar('${d.cronogramaId}')">Editar</button>`
+             : `<button class="btn primary" style="--accent:var(--traza)" onclick="etiqAbrirDevolucion('${d.cronogramaId}','${escHtml(d.meCodigo)}')">Devolución</button>`);
+  openModal(`
+    <div class="mhead"><span class="sup">Diferencia de etiquetado</span><h3>${escHtml(d.orden)}</h3><div class="msub">${escHtml(d.itemCodigo)} — ${escHtml(d.itemNombre)} · Lote ${escHtml(d.lote)}</div></div>
+    <div class="sec rojo"><div class="sec-h">${falta ? 'Se etiquetó menos de lo producido' : 'Se etiquetó más de lo producido'}</div><div class="sec-b">
+      <div style="line-height:1.8;">
+        <div>Producción reportó: <b>${fmtNum(d.produccion)}</b> unidades</div>
+        <div>Etiquetado reportó: <b>${fmtNum(d.etiquetado)}</b> ${escHtml(d.meNombre)}</div>
+        ${d.devuelto>0 ? `<div>Devueltas: <b>${fmtNum(d.devuelto)}</b> (ya restadas)</div>` : ''}
+        <div style="margin-top:6px;font-size:16px;"><b style="color:var(--danger);">${falta?'Faltan':'Sobran'} ${n}</b></div>
+      </div>
+      <div class="sub" style="margin-top:8px;">${falta
+        ? 'Debe salir una funda etiquetada por cada unidad producida. Falta reportar esa cantidad en Etiquetado.' + (puede ? ' Edita el reporte para corregirlo.' : ' Etiquetado debe corregir su reporte.')
+        : 'Se reportaron más fundas que unidades producidas.' + (puede ? ' Si esas fundas se devolvieron sin usar, registra la devolución para que cuadre.' : ' Etiquetado debe registrar la devolución o corregir su reporte.')}</div>
+    </div></div>
+    <div class="modal-actions">${puede ? '<button class="btn ghost" onclick="closeModal()">Cancelar</button>' : ''}${accion}</div>`);
+}
+async function etiqIrAEditar(cronogramaId){
+  closeModal();
+  await new Promise(r=>setTimeout(r, 120)); // deja que el navegador termine de retroceder el historial antes de navegar (si no, el botón atrás se descuadra)
+  currentModule = 'etiquetado';
+  document.querySelectorAll('.side-item').forEach(b=>b.classList.toggle('active', b.dataset.mod==='etiquetado'));
+  closeSidebar();
+  EtiqState.tab = 'registros';
+  await renderEtiquetado();
+  setActiveTab('registros');
+  await etiqAbrirEditarRegistros(cronogramaId);
+}
+// Editar lo reportado de una orden (cantidades de fundas ya registradas)
+let EtiqEdicion = null;
+async function etiqAbrirEditarRegistros(cronogramaId){
+  if(!cacheItems || !cacheFormulacion) await invLoad(false);
+  const { data: regs } = await sb.from('etiquetado_registros').select('*').eq('cronograma_id', cronogramaId).order('created_at');
+  if(!regs || !regs.length){ toast('Esta orden no tiene registros de etiquetado'); return; }
+  const bloqueo = (await etiqMensajeBloqueoVerificado(cronogramaId)) || (await despMensajeBloqueoLote(regs[0].item_codigo, regs[0].lote_producto));
+  if(bloqueo){ avisar(bloqueo); return; }
+  const { data: ord } = await sb.from('cronograma').select('cantidad_real, cantidad_programada').eq('id', cronogramaId).maybeSingle();
+  EtiqEdicion = { cronogramaId, regs: regs.map(r=>({ id:r.id, fecha:r.fecha, item_me_codigo:r.item_me_codigo, lote_me:r.lote_me, cantidad:Number(r.cantidad) })) };
+  const producidas = ord && ord.cantidad_real != null ? ord.cantidad_real : null;
+  openModal(`
+    <div class="mhead"><span class="sup">Editar etiquetado</span><h3>${escHtml(regs[0].orden_produccion||'')}</h3><div class="msub">${escHtml(regs[0].item_codigo)} — ${escHtml(regs[0].item_nombre)} · Lote ${escHtml(regs[0].lote_producto||'')}</div></div>
+    <div class="sec verde"><div class="sec-h">Cantidades reportadas</div><div class="sec-b">
+      ${producidas!=null ? `<div class="sub" style="margin-bottom:8px;">Producción reportó <b>${fmtNum(producidas)}</b> unidades.</div>` : ''}
+      ${regs.map(r=>`<div class="field"><label>${escHtml(r.item_me_nombre)} · Lote ${escHtml(r.lote_me||'')}</label>
+        <input type="text" inputmode="decimal" id="etiqEd_${r.id}" value="${fmtRaw(r.cantidad)}"></div>`).join('')}
+    </div></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarEdicion()">Guardar</button>
+    </div>`);
+}
+async function etiqGuardarEdicion(){
+  if(!EtiqEdicion) return;
+  const cambios = [];
+  for(const r of EtiqEdicion.regs){
+    const nueva = parseFloat((document.getElementById('etiqEd_' + r.id).value||'').replace(',','.'));
+    if(!(nueva > 0)){ toast('La cantidad debe ser mayor que cero (para quitar un registro usa la ✕ de Registros)'); return; }
+    if(Math.abs(nueva - r.cantidad) > 0.00001) cambios.push({ ...r, nueva });
+  }
+  if(!cambios.length){ closeModal(); return; }
+  for(const r of cambios){ // si aumenta, el lote debe tener saldo para la diferencia
+    if(r.nueva > r.cantidad){
+      const { data } = await sb.from('v_kardex_lotes_disponibles').select('cantidad_disponible').eq('item_codigo', r.item_me_codigo).eq('lote', r.lote_me);
+      const disp = Number(((data||[])[0]||{}).cantidad_disponible||0);
+      if(r.nueva - r.cantidad > disp + 0.0001){ toast('El lote ' + r.lote_me + ' solo tiene ' + fmtNum(disp) + ' disponible para esa diferencia'); return; }
+    }
+  }
+  for(const r of cambios){
+    const { error } = await sb.from('etiquetado_registros').update({ cantidad: r.nueva }).eq('id', r.id);
+    if(error){ toast('Error al guardar: ' + error.message); return; }
+    const { data: upd } = await sb.from('kardex_movimientos').update({ sale: r.nueva }).eq('comprobante', 'ETIQUETADO-' + r.id).select('id');
+    if(!upd || !upd.length) await sb.from('kardex_movimientos').insert({ item_codigo: r.item_me_codigo, fecha: r.fecha, lote: r.lote_me, comprobante: 'ETIQUETADO-' + r.id, entra: 0, sale: r.nueva });
+  }
+  await invLoadStock();
+  EtiqEdicion = null; closeModal();
+  if(EtiqState.tab === 'registros') etiqRegLoad();
+  calcularAlertas();
+  toast('Etiquetado actualizado y Kardex corregido');
+}
+// Devolución de fundas (cuando se etiquetó más de lo producido)
+let EtiqDevolucion = null;
+async function etiqAbrirDevolucion(cronogramaId, meCodigo){
+  const bloqueoV = await etiqMensajeBloqueoVerificado(cronogramaId);
+  if(bloqueoV){ avisar(bloqueoV); return; }
+  const d = (await etiqCalcularDiferencias({ cronogramaId })).find(x=>x.meCodigo===meCodigo);
+  if(!d || d.diferencia <= 0){ toast('Esta orden no tiene fundas sobrantes por devolver'); calcularAlertas(); return; }
+  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_mp');
+  EtiqDevolucion = { d };
+  openModal(`
+    <div class="mhead"><span class="sup">Devolución de fundas</span><h3>${escHtml(d.orden)}</h3><div class="msub">${escHtml(d.meCodigo)} — ${escHtml(d.meNombre)}</div></div>
+    <div class="sec ambar"><div class="sec-h">Fundas que se devolvieron</div><div class="sec-b">
+      <div class="sub" style="margin-bottom:8px;">Producción reportó <b>${fmtNum(d.produccion)}</b> unidades y se etiquetaron <b>${fmtNum(d.neto)}</b>: sobran <b>${fmtNum(d.diferencia)}</b>. La devolución se resta de lo etiquetado y debe cubrir al menos lo que sobra.</div>
+      <div class="field"><label>Cantidad devuelta</label><input type="text" inputmode="decimal" id="etiqDevCant" placeholder="${fmtRaw(d.diferencia)}"></div>
+      <div class="field"><label>Lote de las fundas</label>
+        <select id="etiqDevLote">${(d.lotesMe.length?d.lotesMe:['']).map(l=>`<option value="${escHtml(l)}">${l?('Lote '+escHtml(l)):'Sin lote'}</option>`).join('')}</select></div>
+      <div class="field"><label>Responsable</label><select id="etiqDevResp"><option value="">Selecciona…</option>${responsables.map(r=>`<option value="${escHtml(r.nombre)}">${escHtml(r.nombre)}</option>`).join('')}</select></div>
+    </div></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn primary" style="--accent:var(--traza)" onclick="etiqGuardarDevolucion()">Registrar devolución</button>
+    </div>`);
+}
+async function etiqGuardarDevolucion(){
+  if(!EtiqDevolucion) return;
+  const d = EtiqDevolucion.d;
+  const cantidad = parseFloat((document.getElementById('etiqDevCant').value||'').replace(',','.'));
+  if(!(cantidad > 0)){ toast('Escribe la cantidad devuelta'); return; }
+  if(cantidad + 0.0005 < d.diferencia){ toast('La devolución debe ser de al menos ' + fmtNum(d.diferencia) + ' para que cuadre con lo producido'); return; }
+  const lote = document.getElementById('etiqDevLote').value;
+  const responsable = document.getElementById('etiqDevResp').value;
+  const { data, error } = await sb.from('etiquetado_devoluciones').insert({ cronograma_id: d.cronogramaId, item_me_codigo: d.meCodigo, item_me_nombre: d.meNombre, lote_me: lote||null, cantidad, responsable: responsable||null }).select().single();
+  if(error){ toast('Error al registrar la devolución: ' + error.message); return; }
+  const { error: errK } = await sb.from('kardex_movimientos').insert({ item_codigo: d.meCodigo, fecha: todayISO(), lote: lote||'N/A', comprobante: 'DEVOLUCION-ETIQ-' + data.id, entra: cantidad, sale: 0 });
+  if(errK) toast('Se registró la devolución, pero hubo un error al devolver al Kardex: ' + errK.message);
+  await invLoadStock();
+  EtiqDevolucion = null; closeModalAll();
+  calcularAlertas();
+  toast(cantidad > d.diferencia + 0.0005 ? 'Devolución registrada. Ahora se etiquetó menos de lo producido: revisa la campana.' : 'Devolución registrada: ya cuadra con lo producido');
+}
+async function etiqDevolucionEliminar(id){
+  const fila = (cacheEtiqRegistros||[]).find(r=>r._tipo==='devolucion' && r.id===id);
+  const bloqueoV = fila ? await etiqMensajeBloqueoVerificado(fila.cronograma_id) : null;
+  if(bloqueoV){ avisar(bloqueoV); return; }
+  if(!await confirmar('¿Eliminar esta devolución? Se volverá a descontar del Kardex y puede reaparecer la diferencia.')) return;
+  await sb.from('kardex_movimientos').delete().eq('comprobante', 'DEVOLUCION-ETIQ-' + id);
+  const { error } = await sb.from('etiquetado_devoluciones').delete().eq('id', id);
+  if(error){ toast('Error: ' + error.message); return; }
+  await invLoadStock();
+  cacheEtiqRegistros = (cacheEtiqRegistros||[]).filter(r=>!(r._tipo==='devolucion' && r.id===id));
+  toast('Devolución eliminada y Kardex revertido'); renderEtiqRegistrosList(); calcularAlertas();
 }
 
 /* ---------------- Registros (histórico) ---------------- */
@@ -7109,6 +7634,7 @@ async function renderEtiqRegistrosTab(){
     <div class="field-row" style="margin-bottom:6px;">
       <button class="btn" style="width:100%;" onclick="etiqRegExportExcel()">⬇ Descargar Excel</button>
     </div>
+    <div id="etiqFechasBanner"></div>
     <div class="list-meta" id="etiqRegMeta">Cargando…</div>
     <div class="reg-list" id="etiqRegList"></div>
   `;
@@ -7116,13 +7642,21 @@ async function renderEtiqRegistrosTab(){
   document.getElementById('etiqRegDesde').addEventListener('change', e=>{ EtiqState.desde = e.target.value; etiqRegLoad(); });
   document.getElementById('etiqRegHasta').addEventListener('change', e=>{ EtiqState.hasta = e.target.value; etiqRegLoad(); });
   await etiqRegLoad();
+  etiqActualizarBannerFechas();
 }
 async function etiqRegLoad(){
-  let query = sb.from('etiquetado_registros').select('*').order('created_at',{ascending:false});
-  if(EtiqState.desde) query = query.gte('fecha', EtiqState.desde);
-  if(EtiqState.hasta) query = query.lte('fecha', EtiqState.hasta);
-  const { data, error } = await query.limit(1000);
-  cacheEtiqRegistros = error ? [] : (data||[]);
+  let q1 = sb.from('etiquetado_registros').select('*').order('created_at',{ascending:false});
+  let q2 = sb.from('etiquetado_bajas').select('*').order('created_at',{ascending:false});
+  let q3 = sb.from('etiquetado_devoluciones').select('*, cronograma(orden_produccion, item_codigo, lote, fecha)').order('created_at',{ascending:false});
+  if(EtiqState.desde){ q1 = q1.gte('fecha', EtiqState.desde); q2 = q2.gte('fecha', EtiqState.desde); q3 = q3.gte('created_at', EtiqState.desde); }
+  if(EtiqState.hasta){ q1 = q1.lte('fecha', EtiqState.hasta); q2 = q2.lte('fecha', EtiqState.hasta); q3 = q3.lte('created_at', EtiqState.hasta + 'T23:59:59'); }
+  const [r1, r2, r3, r4] = await Promise.all([q1.limit(1000), q2.limit(500), q3.limit(500), sb.from('etiquetado_ordenes').select('cronograma_id, estado_verificacion')]);
+  cacheEtiqVerificados = new Set((r4.error ? [] : (r4.data||[])).filter(e=>e.estado_verificacion==='aprobado').map(e=>e.cronograma_id));
+  const regs = (r1.error ? [] : (r1.data||[])).map(r=>({ ...r, _tipo:'etiquetado' }));
+  const bajas = (r2.error ? [] : (r2.data||[])).map(b=>({ ...b, _tipo:'baja' }));
+  const devs = (r3.error ? [] : (r3.data||[])).map(d=>({ ...d, _tipo:'devolucion', fecha:(d.created_at||'').slice(0,10),
+    orden_produccion:(d.cronograma||{}).orden_produccion, item_codigo:(d.cronograma||{}).item_codigo, lote_producto:(d.cronograma||{}).lote }));
+  cacheEtiqRegistros = regs.concat(bajas, devs).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
   renderEtiqRegistrosList();
 }
 function etiqRegFiltered(){
@@ -7132,7 +7666,9 @@ function etiqRegFiltered(){
     rows = rows.filter(r=>
       (r.item_codigo||'').toUpperCase().includes(q) || (r.item_nombre||'').toUpperCase().includes(q) ||
       (r.item_me_codigo||'').toUpperCase().includes(q) || (r.item_me_nombre||'').toUpperCase().includes(q) ||
-      (r.lote_producto||'').toUpperCase().includes(q) || (r.lote_me||'').toUpperCase().includes(q)
+      (r.lote_producto||'').toUpperCase().includes(q) || (r.lote_me||'').toUpperCase().includes(q) ||
+      (r.lote||'').toUpperCase().includes(q) || (r.orden_produccion||'').toUpperCase().includes(q) ||
+      (r._tipo==='baja' && 'BAJA'.includes(q)) || (r._tipo==='devolucion' && 'DEVOLUCION DEVOLUCIÓN'.includes(q))
     );
   }
   return rows;
@@ -7144,13 +7680,27 @@ function renderEtiqRegistrosList(){
   const rows = etiqRegFiltered();
   meta.textContent = rows.length + ' registro(s) encontrado(s)';
   if(!rows.length){ list.innerHTML = '<div class="empty-state">Sin resultados</div>'; return; }
-  list.innerHTML = rows.map(r=>`
-    <div class="reg-row">
-      <div class="rmain"><span class="sup">${escHtml(r.orden_produccion||'')} · ${escHtml(r.item_codigo)} · Lote ${escHtml(r.lote_producto||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(r.item_nombre)}</span></div>
-      <div class="rval"><span class="sup">${escHtml(r.item_me_codigo)}</span><span class="big">${fmtNum(r.cantidad)}</span><span class="sub">Lote ME ${escHtml(r.lote_me||'')}</span></div>
-      <button class="redit" title="Eliminar" onclick="etiqEliminarMEDesdeRegistros('${r.id}')">✕</button>
-    </div>
-  `).join('');
+  list.innerHTML = rows.map(r=>{
+    if(r._tipo==='baja') return `
+      <div class="reg-row">
+        <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · Lote ${escHtml(r.lote||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(r.item_nombre||r.item_codigo)} <b style="color:var(--danger);">BAJA</b></span></div>
+        <div class="rval"><span class="big">${fmtNum(r.cantidad)}</span><span class="sub">${escHtml(r.motivo||'')}</span></div>
+        <button class="redit" title="Eliminar" onclick="etiqBajaEliminar('${r.id}')">✕</button>
+      </div>`;
+    if(r._tipo==='devolucion') return `
+      <div class="reg-row">
+        <div class="rmain"><span class="sup">${escHtml(r.orden_produccion||'')} · ${escHtml(r.item_me_codigo)} · Lote ${escHtml(r.lote_me||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(r.item_me_nombre||r.item_me_codigo)} <b style="color:var(--ok);">DEVOLUCIÓN</b></span></div>
+        <div class="rval"><span class="big">${fmtNum(r.cantidad)}</span>${r.responsable?`<span class="sub">${escHtml(r.responsable)}</span>`:''}</div>
+        <button class="redit" title="Eliminar" onclick="etiqDevolucionEliminar('${r.id}')">✕</button>
+      </div>`;
+    const verif = cacheEtiqVerificados && cacheEtiqVerificados.has(r.cronograma_id);
+    return `
+      <div class="reg-row" ${verif ? '' : `onclick="etiqAbrirEditarRegistros('${r.cronograma_id}')"`}>
+        <div class="rmain"><span class="sup">${escHtml(r.orden_produccion||'')} · ${escHtml(r.item_codigo)} · Lote ${escHtml(r.lote_producto||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(r.item_nombre)}${verif ? ' <b style="color:var(--ok);">✓ Verificado</b>' : ''}</span></div>
+        <div class="rval"><span class="sup">${escHtml(r.item_me_codigo)}</span><span class="big">${fmtNum(r.cantidad)}</span><span class="sub">Lote ME ${escHtml(r.lote_me||'')}</span></div>
+        ${verif ? '<span class="redit" title="Verificado por Calidad: ya no se puede editar" style="opacity:.5;">🔒</span>' : `<button class="redit" title="Eliminar" onclick="event.stopPropagation();etiqEliminarMEDesdeRegistros('${r.id}')">✕</button>`}
+      </div>`;
+  }).join('');
 }
 async function etiqEliminarMEDesdeRegistros(id){
   const bloqueo = await etiqBloqueoRegistro(id);
@@ -7163,13 +7713,16 @@ async function etiqEliminarMEDesdeRegistros(id){
   cacheEtiqRegistros = (cacheEtiqRegistros||[]).filter(r=>r.id!==id);
   toast('Registro eliminado y Kardex revertido');
   renderEtiqRegistrosList();
+  calcularAlertas();
 }
 function etiqRegExportExcel(){
   const rows = etiqRegFiltered();
-  const FIELDS = ['Fecha','N° Orden','Código Producto','Producto','Lote Producto','Código ME','Material de Empaque','Cantidad','Lote ME','Responsable','Observaciones'];
+  const FIELDS = ['Tipo','Fecha','N° Orden','Código Producto','Producto','Lote Producto','Código ME','Material de Empaque','Cantidad','Lote ME','Responsable','Observaciones / Motivo'];
   const aoa = [FIELDS];
   rows.forEach(r=>{
-    aoa.push([r.fecha, r.orden_produccion||'', r.item_codigo||'', r.item_nombre||'', r.lote_producto||'', r.item_me_codigo||'', r.item_me_nombre||'', r.cantidad||0, r.lote_me||'', r.responsable||'', r.observaciones||'']);
+    if(r._tipo==='baja') aoa.push(['Baja', r.fecha, '', '', '', '', r.item_codigo||'', r.item_nombre||'', r.cantidad||0, r.lote||'', r.responsable||'', r.motivo||'']);
+    else if(r._tipo==='devolucion') aoa.push(['Devolución', r.fecha, r.orden_produccion||'', r.item_codigo||'', '', r.lote_producto||'', r.item_me_codigo||'', r.item_me_nombre||'', r.cantidad||0, r.lote_me||'', r.responsable||'', '']);
+    else aoa.push(['Etiquetado', r.fecha, r.orden_produccion||'', r.item_codigo||'', r.item_nombre||'', r.lote_producto||'', r.item_me_codigo||'', r.item_me_nombre||'', r.cantidad||0, r.lote_me||'', r.responsable||'', r.observaciones||'']);
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = FIELDS.map(()=>({wch:18}));
@@ -7178,7 +7731,6 @@ function etiqRegExportExcel(){
   XLSX.writeFile(wb, 'Etiquetado_PROPIZZEC_' + todayISO() + '.xlsx');
   toast('Excel exportado');
 }
-
 
 const MonState = { tab:'produccion', selId:null };
 let cacheRegistro = null;
@@ -7206,6 +7758,149 @@ async function monLoad(force){
    CALIDAD — Bajas y Mermas del día + Cuarentena de lotes
    ============================================================ */
 let CalState = { tab:'bajasmermas', desde: todayISO(), hasta: todayISO(), q:'' };
+/* ================= Calidad · Etiqueta (verificación del etiquetado) ================= */
+let CalEtqState = { sub:'pendiente', q:'' };
+let cacheCalEtq = [];
+function calEtqSub(sub){ CalEtqState.sub = sub; renderCalEtiquetaTab(); }
+async function renderCalEtiquetaTab(){
+  const root = document.getElementById('calRoot');
+  if(!root) return;
+  const s = CalEtqState.sub;
+  root.innerHTML = `
+    <div class="card" style="--accent:var(--calidad)">
+      <h2>🏷️ Verificación de etiquetado</h2>
+      <div class="sub">Revisa que el etiquetado esté bien llenado: lote, fechas, foto de evidencia, cantidad y lote del material de empaque. Al verificar, la actividad se cierra y Etiquetado ya no puede cambiarla.</div>
+    </div>
+    <div class="tabbar">
+      <button class="tabbtn ${s==='pendiente'?'active':''}" onclick="calEtqSub('pendiente')">Por verificar</button>
+      <button class="tabbtn ${s==='registros'?'active':''}" onclick="calEtqSub('registros')">Registros</button>
+    </div>
+    <div class="list-toolbar"><div class="search-wrap"><span class="sic">🔎</span>
+      <input type="text" id="calEtqBuscar" placeholder="Buscar por producto, OP o lote…" value="${escHtml(CalEtqState.q)}"></div></div>
+    <div class="list-meta" id="calEtqMeta">Cargando…</div>
+    <div class="reg-list" id="calEtqLista"></div>`;
+  document.getElementById('calEtqBuscar').addEventListener('input', e=>{ CalEtqState.q = e.target.value; calEtqPintar(); });
+  await calEtqCargar();
+}
+async function calEtqCargar(){
+  if(!cacheItems || !cacheFormulacion) await invLoad(false);
+  const [rg, eo, dv] = await Promise.all([
+    sb.from('etiquetado_registros').select('*').order('created_at', { ascending:false }).limit(2000),
+    sb.from('etiquetado_ordenes').select('cronograma_id, tiene_evidencia, estado_verificacion, verificado_por, verificado_en'),
+    sb.from('etiquetado_devoluciones').select('cronograma_id, cantidad')
+  ]);
+  const regs = rg.data || [];
+  const info = {}; (eo.error ? [] : (eo.data||[])).forEach(e=>{ info[e.cronograma_id] = e; });
+  const devs = {}; (dv.error ? [] : (dv.data||[])).forEach(d=>{ devs[d.cronograma_id] = (devs[d.cronograma_id]||0) + Number(d.cantidad||0); });
+  const difs = await etiqCalcularDiferencias({ regs });
+  const grupos = {};
+  regs.forEach(r=>{ (grupos[r.cronograma_id] = grupos[r.cronograma_id] || { id:r.cronograma_id, regs:[] }).regs.push(r); });
+  cacheCalEtq = Object.values(grupos).map(g=>{
+    const e = info[g.id] || {};
+    return { ...g, r0: g.regs[0], estado: e.estado_verificacion || 'pendiente', verificado_por: e.verificado_por || null, verificado_en: e.verificado_en || null,
+      tieneFoto: !!e.tiene_evidencia, dif: difs.filter(d=>d.cronogramaId===g.id),
+      total: Math.round((g.regs.reduce((s,r)=>s+Number(r.cantidad||0),0) - (devs[g.id]||0)) * 10000) / 10000 };
+  });
+  calEtqPintar();
+}
+function calEtqPintar(){
+  const lista = document.getElementById('calEtqLista'), meta = document.getElementById('calEtqMeta');
+  if(!lista) return;
+  const q = (CalEtqState.q||'').trim().toUpperCase();
+  let grupos = cacheCalEtq.filter(g=> CalEtqState.sub==='registros' ? g.estado==='aprobado' : g.estado!=='aprobado');
+  if(q) grupos = grupos.filter(g=>[g.r0.item_codigo, g.r0.item_nombre, g.r0.orden_produccion, g.r0.lote_producto].some(x=>(x||'').toUpperCase().includes(q)));
+  meta.textContent = grupos.length + (CalEtqState.sub==='registros' ? ' etiquetado(s) verificado(s)' : ' etiquetado(s) por verificar');
+  if(!grupos.length){ lista.innerHTML = '<div class="empty-state">' + (CalEtqState.sub==='registros' ? 'Todavía no hay etiquetados verificados' : 'No hay etiquetados pendientes de verificar') + '</div>'; return; }
+  lista.innerHTML = grupos.map(g=>{
+    const tags = (g.dif.length ? ' <b style="color:var(--danger);">⚠ Diferencia</b>' : '') + (!g.tieneFoto ? ' <b style="color:#B45309;">Sin foto</b>' : '') + (g.estado==='aprobado' ? ' <b style="color:var(--ok);">✓ Verificado</b>' : '');
+    return `<div class="reg-row" onclick="calEtqAbrir('${g.id}')">
+      <div class="rmain"><span class="sup">${escHtml(g.r0.orden_produccion||'')} · ${escHtml(g.r0.item_codigo)} · Lote ${escHtml(g.r0.lote_producto||'')} · ${ddMMyy(g.r0.fecha)}</span><span class="big">${escHtml(g.r0.item_nombre)}${tags}</span></div>
+      <div class="rval"><span class="sup">ETIQUETADAS</span><span class="big">${fmtNum(g.total)}</span></div>
+    </div>`;
+  }).join('');
+}
+let CalEtqActual = null;
+async function calEtqAbrir(cronogramaId){
+  if(!cacheItems || !cacheFormulacion) await invLoad(false);
+  const [rg, eo, ord] = await Promise.all([
+    sb.from('etiquetado_registros').select('*').eq('cronograma_id', cronogramaId).order('created_at'),
+    sb.from('etiquetado_ordenes').select('*').eq('cronograma_id', cronogramaId).maybeSingle(),
+    sb.from('cronograma').select('orden_produccion, item_codigo, fecha, lote, cantidad_real, cantidad_programada').eq('id', cronogramaId).maybeSingle()
+  ]);
+  const regs = rg.data || []; if(!regs.length){ toast('Este etiquetado ya no tiene registros'); return; }
+  const o = ord.data || {}, e = eo.data || {};
+  const { data: ent } = await sb.from('kardex_movimientos').select('fecha_elaboracion, fecha_caducidad').eq('comprobante', 'PRODUCCION N° ' + (o.orden_produccion||'')).limit(1);
+  const fechas = (ent && ent[0]) || {};
+  const difs = await etiqCalcularDiferencias({ cronogramaId });
+  const { data: dv } = await sb.from('etiquetado_devoluciones').select('cantidad').eq('cronograma_id', cronogramaId);
+  const devuelto = (dv||[]).reduce((s,d)=>s+Number(d.cantidad||0), 0);
+  const total = regs.reduce((s,r)=>s+Number(r.cantidad||0), 0);
+  const neto = Math.round((total - devuelto) * 10000) / 10000;
+  const r0 = regs[0], aprobado = e.estado_verificacion === 'aprobado';
+  const responsables = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_calidad');
+  const fotoSrc = e.evidencia_url || e.evidencia || null;
+  CalEtqActual = { cronogramaId, tieneFoto: !!fotoSrc, evidencia: fotoSrc, tieneFechas: !!(fechas.fecha_elaboracion && fechas.fecha_caducidad), dif: difs };
+  const fmtF = f => f ? ddMMyy(f).replace(/(\d\d)(\d\d)(\d\d)/,'$1/$2/20$3') : '—';
+  openModal(`
+    <div class="mhead"><span class="sup">${aprobado ? 'Etiquetado verificado' : 'Verificar etiquetado'}</span><h3>${escHtml(r0.orden_produccion||'')}</h3><div class="msub">${escHtml(r0.item_codigo)} — ${escHtml(r0.item_nombre)}</div></div>
+    <div class="sec azul"><div class="sec-h">Lote y fechas del producto</div><div class="sec-b" style="line-height:1.9;">
+      <div>Lote: <b>${escHtml(r0.lote_producto||'—')}</b></div>
+      <div>Fecha de elaboración: <b>${fechas.fecha_elaboracion ? escHtml(fmtFechaLarga(fechas.fecha_elaboracion)) : '<span style="color:var(--danger);">sin fecha</span>'}</b></div>
+      <div>Fecha de caducidad: <b>${fechas.fecha_caducidad ? escHtml(fmtFechaLarga(fechas.fecha_caducidad)) : '<span style="color:var(--danger);">sin fecha</span>'}</b></div>
+    </div></div>
+    <div class="sec turquesa"><div class="sec-h">Evidencia (foto)</div><div class="sec-b">
+      ${fotoSrc ? `<img src="${fotoSrc}" alt="Evidencia" style="width:100%;max-height:260px;object-fit:contain;border-radius:8px;border:1px solid var(--line);background:#F8FAFC;" onclick="calEtqFotoGrande()"><div class="sub" style="margin-top:4px;">Toca la foto para verla en grande.</div>`
+        : '<div style="color:var(--danger);font-weight:700;">Sin foto de evidencia</div>'}
+    </div></div>
+    <div class="sec ambar"><div class="sec-h">Producción y etiquetado</div><div class="sec-b" style="line-height:1.9;">
+      <div>Producción reportó: <b>${o.cantidad_real!=null ? fmtNum(o.cantidad_real) + ' unidades' : '<span style="color:var(--danger);">sin cantidad real</span>'}</b></div>
+      <div>Etiquetado reportó: <b>${fmtNum(total)}</b>${devuelto>0 ? ` · devueltas ${fmtNum(devuelto)} → neto <b>${fmtNum(neto)}</b>` : ''}</div>
+      <div>${difs.length ? `<b style="color:var(--danger);">⚠ No cuadra: ${difs.map(d=>(d.diferencia<0?'faltan ':'sobran ')+fmtNum(Math.abs(d.diferencia))).join(', ')}</b>` : '<b style="color:var(--ok);">✓ Cuadra con lo producido</b>'}</div>
+    </div></div>
+    <div class="sec verde"><div class="sec-h">Material de empaque</div><div class="sec-b">
+      ${regs.map(r=>`<div class="ci"><div class="nm"><small>${escHtml(r.item_me_codigo)} · Lote ${escHtml(r.lote_me||'—')}</small><b>${escHtml(r.item_me_nombre)}</b></div><div class="vl">${fmtNum(r.cantidad)}</div></div>`).join('')}
+    </div></div>
+    <div class="sec gris"><div class="sec-h">${aprobado ? 'Verificación' : 'Cierre'}</div><div class="sec-b">
+      ${aprobado
+        ? `<div style="line-height:1.8;">Verificado por <b>${escHtml(e.verificado_por||'—')}</b>${e.verificado_en ? ' el ' + escHtml(ddMMyy(String(e.verificado_en).slice(0,10))) : ''}.</div>`
+        : `<div class="field" style="margin-bottom:0;"><label>Responsable de la verificación</label><select id="calEtqResp"><option value="">Selecciona…</option>${responsables.map(x=>`<option value="${escHtml(x.nombre)}">${escHtml(x.nombre)}</option>`).join('')}</select></div>`}
+    </div></div>
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">Cerrar</button>
+      ${aprobado ? `<button class="btn primary" style="--accent:var(--calidad)" onclick="calEtqReabrir('${cronogramaId}')">↩ Reabrir</button>`
+                 : `<button class="btn primary" style="--accent:var(--calidad)" onclick="calEtqVerificar('${cronogramaId}')">✓ Verificar</button>`}
+    </div>`);
+}
+function fmtFechaLarga(iso){ const m = String(iso||'').match(/^(\d{4})-(\d\d)-(\d\d)/); return m ? (m[3] + '/' + m[2] + '/' + m[1]) : (iso||'—'); }
+function calEtqFotoGrande(){
+  if(!CalEtqActual || !CalEtqActual.evidencia) return;
+  openModal(`<div class="mhead"><span class="sup">Evidencia</span><h3>Foto del etiquetado</h3></div>
+    <img src="${CalEtqActual.evidencia}" alt="Evidencia" style="width:100%;border-radius:8px;">
+    <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Cerrar</button></div>`);
+}
+async function calEtqVerificar(cronogramaId){
+  if(!CalEtqActual) return;
+  const responsable = (document.getElementById('calEtqResp')||{}).value || '';
+  const difs = await etiqCalcularDiferencias({ cronogramaId });
+  if(difs.length){ avisar('No se puede verificar: la cantidad etiquetada no cuadra con lo producido (' + difs.map(d=>(d.diferencia<0?'faltan ':'sobran ')+fmtNum(Math.abs(d.diferencia))).join(', ') + '). Etiquetado debe corregir su reporte o registrar la devolución, y después se verifica.'); return; }
+  if(!responsable){ toast('Selecciona el responsable de la verificación'); return; }
+  const faltan = [];
+  if(!CalEtqActual.tieneFoto) faltan.push('la foto de evidencia');
+  if(!CalEtqActual.tieneFechas) faltan.push('las fechas de elaboración y caducidad');
+  if(faltan.length && !await confirmar('Falta ' + faltan.join(' y ') + '. Si verificas, Etiquetado ya no podrá completarlo. ¿Verificar de todos modos?')) return;
+  const { error } = await sb.from('etiquetado_ordenes').upsert({ cronograma_id: cronogramaId, estado_verificacion:'aprobado', verificado_por: responsable, verificado_en: new Date().toISOString(), updated_at: new Date().toISOString() }, { onConflict:'cronograma_id' });
+  if(error){ toast('Error al verificar: ' + error.message); return; }
+  closeModal(); toast('Etiquetado verificado: la actividad quedó cerrada');
+  await calEtqCargar();
+}
+async function calEtqReabrir(cronogramaId){
+  if(!await confirmar('¿Reabrir este etiquetado? Etiquetado podrá volver a editarlo y quedará pendiente de verificar.')) return;
+  const { error } = await sb.from('etiquetado_ordenes').upsert({ cronograma_id: cronogramaId, estado_verificacion:'pendiente', verificado_por: null, verificado_en: null, updated_at: new Date().toISOString() }, { onConflict:'cronograma_id' });
+  if(error){ toast('Error: ' + error.message); return; }
+  closeModal(); toast('Etiquetado reabierto: vuelve a Por verificar');
+  await calEtqCargar();
+}
+
 /* ============================================================
    ENTREGAS — Calendario semanal
    ============================================================ */
@@ -7231,6 +7926,20 @@ const ENT_PALETA = ['#2563EB','#DC2626','#059669','#D97706','#7C3AED','#DB2777',
    ============================================================ */
 let cacheDespachados = { porLote:{}, porEntrega:{} };
 async function despLoadDespachados(){
+  // Lo despachado por producto+lote lo arma la vista v_despachado_por_lote; aquí solo se baja el N° de despacho por entrega.
+  try{
+    const [vl, dr] = await Promise.all([
+      sb.from('v_despachado_por_lote').select('clave, numero_despacho'),
+      sb.from('despacho_registros').select('numero_despacho, entrega_id')
+    ]);
+    if(!vl.error && !dr.error && Array.isArray(vl.data) && Array.isArray(dr.data)){
+      const porLote = {}, porEntrega = {};
+      vl.data.forEach(r=>{ porLote[r.clave] = r.numero_despacho; });
+      dr.data.forEach(r=>{ if(r.entrega_id) porEntrega[r.entrega_id] = r.numero_despacho; });
+      cacheDespachados = { porLote, porEntrega };
+      return cacheDespachados;
+    }
+  }catch(e){ console.warn('Vista de despachos no disponible; se calcula en el navegador:', e); }
   let { data, error } = await sb.from('despacho_registros').select('numero_despacho, entrega_id, items');
   if(error){ // por si todavía no se ha corrido la migración de entrega_id, el bloqueo por lote sigue funcionando
     ({ data } = await sb.from('despacho_registros').select('numero_despacho, items'));
@@ -8487,6 +9196,7 @@ async function renderCalidad(){
     <div class="tabbar">
       <button class="tabbtn ${CalState.tab==='bajasmermas'?'active':''}" data-tab="bajasmermas" onclick="calGoTab('bajasmermas')">Desperdicios</button>
       <button class="tabbtn ${CalState.tab==='cuarentena'?'active':''}" data-tab="cuarentena" onclick="calGoTab('cuarentena')">Cuarentena</button>
+    <button class="tabbtn ${CalState.tab==='etiqueta'?'active':''}" data-tab="etiqueta" onclick="calGoTab('etiqueta')">Etiqueta</button>
     </div>
     <div id="calRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
@@ -8498,6 +9208,7 @@ async function renderCalidad(){
 }
 function calGoTab(tab){ CalState.tab = tab; setActiveTab(tab); calRenderBody(); }
 function calRenderBody(){
+  if(CalState.tab === 'etiqueta') return renderCalEtiquetaTab();
   if(CalState.tab === 'cuarentena') return renderCalCuarentenaTab();
   return renderCalBajasMermasTab();
 }
@@ -8505,6 +9216,7 @@ function calRenderBody(){
 /* ---------------- Tab: Bajas y Mermas ---------------- */
 async function renderCalBajasMermasTab(){
   const root = document.getElementById('calRoot');
+  if(!root) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   root.innerHTML = `
     <div class="card" style="--accent:var(--calidad)">
       <h2>🔬 Desperdicios</h2>
@@ -8581,6 +9293,7 @@ function calBajasMermasRenderList(){
 /* ---------------- Tab: Cuarentena ---------------- */
 async function renderCalCuarentenaTab(){
   const root = document.getElementById('calRoot');
+  if(!root) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   root.innerHTML = `
     <div class="card" style="--accent:var(--calidad)">
       <h2>🧪 Cuarentena de lotes</h2>
@@ -9012,6 +9725,7 @@ async function monSelectProducto(id){
 
 async function renderMonProduccion(){
   const body = document.getElementById('monBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const id = MonState.selId;
   if(!id){
     body.innerHTML = monRenderListaProductos();
@@ -9379,6 +10093,7 @@ async function monRegLoad(force){
 }
 async function renderMonRegistrosTab(){
   const body = document.getElementById('monBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   if(MonRegState.editing){ return renderMonRegistroEditor(); }
   body.innerHTML = `
     <div class="list-toolbar">
@@ -9545,6 +10260,7 @@ async function monRegAddCatalogo(tipo, inputId, selectId){
 }
 function renderMonRegistroEditor(){
   const body = document.getElementById('monBody');
+  if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const reg = MonRegState.editing;
   if(!reg){ monRegBack(); return; }
   const cumplOpts = ['Cumple','No Cumple','Parcial'];
@@ -9839,6 +10555,7 @@ function indFmtPct(v){ return v==null ? '—' : Math.round(v*100); }
 /* ---------------- Producción ---------------- */
 async function indRenderProduccion(){
   const root = document.getElementById('indRoot');
+  if(!root) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const [{ data: registros }, { data: paradas }] = await Promise.all([
@@ -9921,6 +10638,7 @@ async function indRenderProduccion(){
 /* ---------------- Sellado ---------------- */
 async function indRenderSellado(){
   const root = document.getElementById('indRoot');
+  if(!root) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const { data: filas } = await sb.from('sellado_registros').select('tipo_actividad, nombre_actividad, items').gte('fecha', desde).lte('fecha', hasta);
@@ -9987,6 +10705,7 @@ async function indRenderSellado(){
 /* ---------------- Entregas ---------------- */
 async function indRenderEntregasTab(){
   const root = document.getElementById('indRoot');
+  if(!root) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   root.innerHTML = '<div class="loading-state"><span class="spinner"></span>Cargando…</div>';
   const { desde, hasta } = indRangoFechas();
   const [{ data: entregas }, { data: despachos }] = await Promise.all([
@@ -10187,6 +10906,52 @@ async function cfgSetVidaUtil(codigo){
   const it = (cacheItems||[]).find(i=>i.codigo===codigo);
   if(it){ it.vida_util_cantidad = cantidad; it.vida_util_unidad = unidadFinal; }
   toast(cantidad ? ('Vida útil guardada: ' + vidaUtilTexto(cantidad, unidadFinal)) : 'Vida útil quitada');
+}
+function cfgParadasSelladoCard(){
+  const esAdmin = !permisoActual();
+  const acts = (cacheCatalogosPlan||[]).filter(c=>c.tipo==='sellado_tipo_parada').slice().sort((a,b)=>String(a.nombre).localeCompare(String(b.nombre),'es'));
+  return `<div class="card" style="--accent:var(--materia)">
+    <h2>Actividades de parada de Sellado</h2>
+    <div class="sub">Son las actividades que Sellado elige al registrar una parada. Las <b>fijas</b> (🔒) no se pueden eliminar desde Sellado.${esAdmin ? ' Marca “Fija” para proteger una actividad o desmárcala para permitir que Sellado la elimine.' : ' Puedes agregar nuevas y eliminar las que no sean fijas.'}</div>
+    <div class="catalog-mini">
+      ${acts.length ? acts.map(a=>`<div class="cfg-row" style="display:flex;align-items:center;gap:8px;">
+        <span style="flex:1;">${a.fija?'🔒 ':''}${escHtml(a.nombre)}</span>
+        ${esAdmin ? `<label style="display:flex;align-items:center;gap:4px;font-size:12px;"><input type="checkbox" ${a.fija?'checked':''} onchange="cfgSetParadaFija('${a.id}', this.checked)"> Fija</label>` : ''}
+        ${a.fija ? '' : `<button onclick="cfgEliminarParadaSellado('${a.id}')">Eliminar</button>`}
+      </div>`).join('') : '<div class="empty-state">Sin actividades</div>'}
+    </div>
+    <div class="inline-add" style="margin-top:8px;">
+      <input type="text" id="cfgParadaNueva" placeholder="Nueva actividad de parada…">
+      <button class="btn" onclick="cfgAgregarParadaSellado()">+ Añadir</button>
+    </div>
+  </div>`;
+}
+async function cfgSetParadaFija(id, fija){
+  const { error } = await sb.from('catalogos').update({ fija }).eq('id', id);
+  if(error){ toast(/fija/.test(error.message||'') ? 'Falta correr en Supabase la migración de actividades fijas.' : 'Error: ' + error.message); cfgRenderBody(); return; }
+  const a = (cacheCatalogosPlan||[]).find(x=>x.id===id); if(a) a.fija = fija;
+  const t = SEL_TIPOS_PARADA.find(x=>x.id===id); if(t) t.fija = fija;
+  toast(fija ? 'Actividad fija: Sellado ya no puede eliminarla' : 'Actividad no fija: Sellado puede eliminarla');
+  cfgRenderBody();
+}
+async function cfgEliminarParadaSellado(id){
+  const a = (cacheCatalogosPlan||[]).find(x=>x.id===id);
+  if(a && a.fija){ toast('Esta actividad es fija. Producción debe desmarcar “Fija” primero.'); return; }
+  if(!await confirmar('¿Eliminar esta actividad de la lista de paradas de Sellado?')) return;
+  const { error } = await sb.from('catalogos').delete().eq('id', id);
+  if(error){ toast('Error: ' + error.message); return; }
+  cacheCatalogosPlan = (cacheCatalogosPlan||[]).filter(x=>x.id!==id);
+  SEL_TIPOS_PARADA = SEL_TIPOS_PARADA.filter(x=>x.id!==id);
+  cfgRenderBody();
+}
+async function cfgAgregarParadaSellado(){
+  const input = document.getElementById('cfgParadaNueva'); const nombre = (input.value||'').trim();
+  if(!nombre){ toast('Escribe el nombre de la actividad'); return; }
+  if((cacheCatalogosPlan||[]).some(x=>x.tipo==='sellado_tipo_parada' && x.nombre.toLowerCase()===nombre.toLowerCase())){ toast('Esa actividad ya existe'); return; }
+  const { data, error } = await sb.from('catalogos').insert({ tipo:'sellado_tipo_parada', nombre, activo:true }).select().single();
+  if(error){ toast('Error: ' + error.message); return; }
+  cacheCatalogosPlan = (cacheCatalogosPlan||[]).concat([data]);
+  cfgRenderBody();
 }
 function cfgMetasSelladoCard(){
   const metas = cacheMetasSellado || [];
@@ -10394,6 +11159,7 @@ async function cfgRenderBody(){
   }
   html += cfgTiposMedidasCard(); // Inventario: siempre visible, todas las áreas lo tienen
   if(puede('sellado')) html += cfgMetasSelladoCard();
+  if(puede('sellado')) html += cfgParadasSelladoCard();
   if(puede('etiquetado')) html += cfgVidaUtilCard(); // solo los productos (PT) activos
   if(puede('planificacion')){
     html += cfgPersonalCard();
@@ -10694,7 +11460,7 @@ async function selLoad(force){
   if(force || !cacheFormulacion) tasks.push(sb.from('formulacion').select('*').then(r=>cacheFormulacion=(r.data||[]).map(f=>({...f, cod_producto_principal:normalizarCodigo(f.cod_producto_principal), cod_componente:normalizarCodigo(f.cod_componente)}))));
   if(force || !cacheCatalogosSellado) tasks.push(sb.from('catalogos').select('*').eq('tipo','responsable_sellado').eq('activo',true).then(r=>cacheCatalogosSellado=r.data||[]));
   if(force || !cacheMetasSellado) tasks.push(sb.from('metas_sellado').select('*').then(r=>cacheMetasSellado=r.data||[]));
-  tasks.push(sb.from('catalogos').select('id,nombre').eq('tipo','sellado_tipo_parada').eq('activo',true).order('nombre').then(r=>{
+  tasks.push(sb.from('catalogos').select('id,nombre,fija').eq('tipo','sellado_tipo_parada').eq('activo',true).order('nombre').then(r=>{
     SEL_TIPOS_PARADA = r.data||[];
   }));
   tasks.push(sb.from('sellado_config_actividades').select('*').eq('activo',true).order('orden').then(r=>{
@@ -10721,6 +11487,23 @@ async function selLoad(force){
 // Productos terminados ya aprobados en Monitoreo, con la cantidad que aún falta
 // sellar (producido menos lo ya sellado hasta ahora, para ese mismo lote).
 let cacheSelladoPendientes = [];
+// Lo TRASLADADO (a cualquier selladora) aparece en TODAS las selladoras: disponible = trasladado − sellado desde el primer traslado
+let cacheSelladoTraslados = { trasladado:{}, selladoDespues:{} };
+function selDisponibleTraslado(tipo, codigo, lote){ // el parámetro "tipo" ya no importa: es global
+  const clave = normalizaNombre(codigo)+'|'+normalizaNombre(lote||'');
+  const t = (cacheSelladoTraslados.trasladado||{})[clave] || 0;
+  const s = (cacheSelladoTraslados.selladoDespues||{})[clave] || 0;
+  return Math.max(0, Math.round((t - s)*10000)/10000);
+}
+// "Por sellar" de un ítem en curso: se recalcula con lo que sea que se haya sellado entre tanto (en esta u otra selladora).
+// Si ya está cerrado se conserva lo que había al iniciar.
+function selPendienteActual(it){
+  if(!it || it.pendiente_al_iniciar==null) return null;
+  if(it.estado_timer==='detenido' && it.cantidad!=null) return it.pendiente_al_iniciar;
+  const clave = normalizaNombre(it.item_codigo)+'|'+normalizaNombre(it.lote||'');
+  const p = (cacheSelladoPendientes||[]).find(x=>normalizaNombre(x.item_codigo)+'|'+normalizaNombre(x.lote||'')===clave);
+  return p ? p.pendiente : 0;
+}
 let cacheSelladoPorLote = {}; // "item_codigo|lote" -> cantidad ya sellada de verdad
 function productoTieneCajas(itemCodigo){
   return (cacheFormulacion||[]).some(f=>{
@@ -10729,7 +11512,36 @@ function productoTieneCajas(itemCodigo){
     return compItem && compItem.tipo==='MATERIAL_EMPAQUE' && !!compItem.es_caja_sellado;
   });
 }
+// El estado de cada producto+lote (producido, sellado, pendiente, trasladado y disponible) lo calcula la BASE en la vista
+// v_sellado_estado_lotes: el celular recibe solo el resultado (1 consulta liviana) y todas las pantallas usan la misma cuenta.
+// Si la vista no existe o falla, se usa el cálculo de siempre en el navegador (selCargarPendientesSelladoJS).
 async function selCargarPendientesSellado(){
+  try{
+    const { data, error } = await sb.from('v_sellado_estado_lotes').select('*');
+    if(!error && Array.isArray(data)){ selAplicarEstadoLotes(data); return; }
+  }catch(e){ console.warn('Vista de sellado no disponible; se calcula en el navegador:', e); }
+  await selCargarPendientesSelladoJS();
+}
+function selAplicarEstadoLotes(rows){
+  const porLote = {}, trasl = {}, desp = {}, pendientes = [];
+  (rows||[]).forEach(r=>{
+    const sellado = Number(r.sellado) || 0;
+    if(sellado) porLote[r.clave] = sellado;               // cuánto se ha sellado de verdad por ítem+lote (lo usa Despacho)
+    const t = Number(r.trasladado) || 0; if(t) trasl[r.clave] = t;
+    const d = Number(r.sellado_despues) || 0; if(d) desp[r.clave] = d;
+    if(r.con_produccion){
+      const pendiente = Number(r.pendiente);
+      if(pendiente > 0.001) pendientes.push({ item_codigo:r.item_codigo, item_nombre: r.item_nombre || r.item_codigo, lote:r.lote, pendiente,
+        producido: Number(r.producido), medida: r.medida || '', fecha:r.fecha, _reciente: r.fecha_reciente || r.fecha || '' });
+    }
+  });
+  pendientes.sort((a,b)=> String(b._reciente).localeCompare(String(a._reciente))); // las órdenes más recientes primero, como antes
+  pendientes.forEach(x=>{ delete x._reciente; });
+  cacheSelladoPorLote = porLote;
+  cacheSelladoTraslados = { trasladado: trasl, selladoDespues: desp };
+  cacheSelladoPendientes = pendientes;
+}
+async function selCargarPendientesSelladoJS(){
   // Ahora se toma directo de Cronograma (en cuanto se agrega la orden), sin
   // esperar a que esté producida ni aprobada en Monitoreo — usa la cantidad
   // real si ya se produjo, y si no, la cantidad programada como referencia.
@@ -10739,15 +11551,36 @@ async function selCargarPendientesSellado(){
   const desde60 = entSumarDias(todayISO(), -60);
   // Primero se calcula lo sellado (y se guarda en caché), porque Despacho lo
   // necesita aunque no haya órdenes recientes en Cronograma.
-  const { data: sellados } = await sb.from('sellado_registros').select('items').gte('fecha', desde60);
+  const { data: sellados } = await sb.from('sellado_registros').select('items, tipo_actividad').gte('fecha', desde60);
   const selladoPorClave = {};
-  (sellados||[]).forEach(row=>{
+  const trasladadoPorClave = {}, primerTraslado = {}, selladoDespues = {};
+  const sesiones = sellados || [];
+  // 1) Lo trasladado a CUALQUIER selladora, por producto+lote, y cuándo empezó el primer traslado
+  sesiones.forEach(row=>{
+    (row.items||[]).forEach(it=>{
+      if(!it.es_parada || !it.traslado || it.estado_timer!=='detenido' || !(Number(it.cantidad_traslado) > 0)) return;
+      if(!it.item_codigo || it.item_codigo==='N/A') return;
+      const clave = normalizaNombre(it.item_codigo)+'|'+normalizaNombre(it.lote||'');
+      trasladadoPorClave[clave] = (trasladadoPorClave[clave]||0) + Number(it.cantidad_traslado);
+      const t = it.hora_inicio ? Date.parse(it.hora_inicio) : 0;
+      if(!(clave in primerTraslado) || t < primerTraslado[clave]) primerTraslado[clave] = t;
+    });
+  });
+  // 2) Lo sellado por producto+lote y, de eso, lo sellado DESPUÉS del primer traslado
+  //    (lo sellado antes de que existieran los traslados no le resta a lo trasladado)
+  sesiones.forEach(row=>{
     (row.items||[]).forEach(it=>{
       if(it.es_parada || !it.item_codigo || it.item_codigo==='N/A' || !it.cantidad) return;
       const clave = normalizaNombre(it.item_codigo)+'|'+normalizaNombre(it.lote||'');
-      selladoPorClave[clave] = (selladoPorClave[clave]||0) + Number(it.cantidad||0);
+      const cant = Number(it.cantidad||0);
+      selladoPorClave[clave] = (selladoPorClave[clave]||0) + cant;
+      if(clave in primerTraslado){
+        const ti = it.hora_inicio ? Date.parse(it.hora_inicio) : Infinity;
+        if(ti >= primerTraslado[clave]) selladoDespues[clave] = (selladoDespues[clave]||0) + cant;
+      }
     });
   });
+  cacheSelladoTraslados = { trasladado: trasladadoPorClave, selladoDespues };
   cacheSelladoPorLote = selladoPorClave; // cuánto se ha sellado de verdad por ítem+lote, esté o no ya completo — lo usa Despacho para no ofrecer más de lo que realmente está sellado
   const { data: ordenes } = await sb.from('cronograma')
     .select('item_codigo, lote, cantidad_real, cantidad_programada, fecha')
@@ -10867,7 +11700,7 @@ function selRenderActividades(){
     <div class="sel-hero">
       <div class="sel-hero-txt">
         <h2>📦 Sellado — captura en tiempo real</h2>
-        <div class="sub">Busca el producto en la selladora para iniciar el cronómetro. Si necesitas hacer otra cosa (traslado, limpieza, despacho…), pausa y regístralo como parada.</div>
+        <div class="sub">Primero registra el Traslado del producto en cualquier selladora (⏸ Registrar parada → Traslado): así aparece en la lista de todas las selladoras para iniciar el cronómetro. Para otras actividades (armado de cajas, limpieza, despacho…), pausa y regístralas como parada.</div>
       </div>
       <div class="field" style="max-width:180px;margin-bottom:0;">
         <label>Fecha</label>
@@ -10988,7 +11821,7 @@ function selMachineCardHtml(meta){
         <div class="field" style="margin-bottom:6px;">
           <input type="text" id="selCardSearch_${meta.key}" placeholder="Buscar producto por código o nombre…" oninput="selSearchItem('${meta.key}', this.value)">
         </div>
-        <div class="sub" style="margin-top:-4px;margin-bottom:6px;">Pendientes por sellar (aprobados en Monitoreo):</div>
+        <div class="sub" style="margin-top:-4px;margin-bottom:6px;">Trasladado (pendiente por sellar):</div>
         <div id="selCardResults_${meta.key}"></div>
       </div>
       <div id="selCardItems_${meta.key}"></div>
@@ -11025,12 +11858,12 @@ function selMostrarBuscarSellado(tipo){
 function selAbrirSelectorParada(tipo, itemIdAPausar){
   openModal(`
     <h3>¿Qué actividad vas a registrar?</h3>
-    <div class="sub" style="margin-top:-6px;">Toca la ✕ de una tarjeta para eliminarla de la lista.</div>
+    <div class="sub" style="margin-top:-6px;">Las actividades con 🔒 son fijas: no se pueden eliminar. Las demás se eliminan con la ✕.</div>
     <div class="sel-icon-grid" style="grid-template-columns:repeat(2,1fr);">
       ${SEL_TIPOS_PARADA.map(t=>`
         <div style="position:relative;">
-          <button class="sel-icon-tile" type="button" style="width:100%;" onclick="closeModalAll();selConfirmarParada('${tipo}', '${escHtml(t.nombre)}', ${itemIdAPausar?`'${itemIdAPausar}'`:'null'})"><div class="lbl">${escHtml(t.nombre)}</div></button>
-          <button type="button" title="Eliminar de la lista" onclick="event.stopPropagation();selEliminarTipoParada('${t.id}','${tipo}',${itemIdAPausar?`'${itemIdAPausar}'`:'null'})" style="position:absolute;top:4px;right:4px;width:20px;height:20px;border:none;border-radius:50%;background:var(--danger);color:#fff;font-size:11px;line-height:1;">✕</button>
+          <button class="sel-icon-tile" type="button" style="width:100%;" onclick="selElegirTipoParada('${tipo}', '${escHtml(t.nombre)}', ${itemIdAPausar?`'${itemIdAPausar}'`:'null'})"><div class="lbl">${t.fija?'🔒 ':''}${escHtml(t.nombre)}</div></button>
+          ${t.fija ? '' : `<button type="button" title="Eliminar de la lista" onclick="event.stopPropagation();selEliminarTipoParada('${t.id}','${tipo}',${itemIdAPausar?`'${itemIdAPausar}'`:'null'})" style="position:absolute;top:4px;right:4px;width:20px;height:20px;border:none;border-radius:50%;background:var(--danger);color:#fff;font-size:11px;line-height:1;">✕</button>`}
         </div>
       `).join('')}
     </div>
@@ -11040,7 +11873,22 @@ function selAbrirSelectorParada(tipo, itemIdAPausar){
     </div>
   `);
 }
+// Fecha de la sesión de Sellado que se está viendo (al mediodía, para que ningún huso horario cambie el día)
+function selRefFechaSesion(){ return (SelladoState.fecha || todayISO()) + 'T12:00:00'; }
+function selValidarHorasParada(hi, hf, ref){
+  const a = new Date(hmToISOEnFecha(hi, ref)).getTime(), b = new Date(hmToISOEnFecha(hf, ref)).getTime();
+  if(!(b > a)) return 'La hora de fin debe ser posterior a la de inicio';
+  if(b > Date.now() + 60000) return 'La hora de fin no puede ser futura: la parada ya debió terminar';
+  return null;
+}
+// El N° de personas, el responsable, el ítem y las horas se anotan en la ventana de la actividad (al terminar la parada o al reanudar)
+function selElegirTipoParada(tipo, nombre, itemId){
+  closeModalAll();
+  selConfirmarParada(tipo, nombre, itemId);
+}
 async function selEliminarTipoParada(id, tipo, itemId){
+  const t = SEL_TIPOS_PARADA.find(x=>x.id===id);
+  if(t && t.fija){ toast('Esta actividad es fija: solo Producción puede cambiarlo en Configuración'); return; }
   if(!await confirmar('¿Eliminar esta actividad de la lista de paradas?')) return;
   const { error } = await sb.from('catalogos').delete().eq('id', id);
   if(error){ toast('Error: '+error.message); return; }
@@ -11062,12 +11910,15 @@ async function selAgregarTipoParada(tipo, itemId){
   selConfirmarParada(tipo, nombre, itemId);
 }
 async function selConfirmarParada(tipo, motivo, itemId){
+  // Las personas arrancan con las del sellado (o 2) y se corrigen en la ventana de la actividad
+  const itBase = itemId ? selFindItem(tipo, itemId) : null;
+  const personas = (itBase && itBase.n_personas) ? itBase.n_personas : 2;
   if(itemId){
     // Se pausa un sellado en curso para hacer otra actividad.
     const it = selFindItem(tipo, itemId);
     if(!it) return;
     const nowIso = new Date().toISOString();
-    it.pausas = (it.pausas||[]).concat([{inicio:nowIso, fin:null, motivo}]);
+    it.pausas = (it.pausas||[]).concat([{inicio:nowIso, fin:null, motivo, n_personas:personas}]);
     it.estado_timer = 'pausado';
     it.motivo_pausa_actual = motivo;
     await selPersistItems(tipo);
@@ -11082,7 +11933,7 @@ async function selConfirmarParada(tipo, motivo, itemId){
   const nuevo = {
     id: 'it_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     item_codigo: 'N/A', item_nombre: 'N/A', es_parada: true, actividad_parada: motivo,
-    lote:'N/A', n_personas:2, n_selladoras:'N/A',
+    lote:'N/A', n_personas:personas, n_selladoras:'N/A',
     estado_timer:'corriendo', hora_inicio: nowIso, hora_fin:null, pausas:[],
     minutos_realizado:null, cantidad:null, unidades_hora:null, meta_selladora:null,
     pct_cumplimiento:null, clasificacion_kpi:null, observaciones:'', responsable:''
@@ -11096,43 +11947,38 @@ async function selConfirmarParada(tipo, motivo, itemId){
   toast('Parada registrada — ' + motivo);
 }
 // Revisa las pausas de un ítem y crea un registro de "parada" por cada una que
-// ya esté cerrada (tiene inicio y fin) y todavía no se haya registrado — cubre
-// tanto el caso de "Reanudar" como el de finalizar el sellado directo desde
-// una pausa, para que ninguna parada se quede sin contar.
+// ya esté cerrada (tiene inicio y fin) y todavía no se haya registrado. Si al reanudar se
+// llenó el detalle (ítem, cantidad, responsable, personas), el registro lo lleva.
 function selRegistrarParadasCerradas(tipo, it){
-  const row = SelladoState.sesiones[tipo];
+  selRegistrarParadasCerradasEnFila(SelladoState.sesiones[tipo], it);
+}
+function selRegistrarParadasCerradasEnFila(row, it){
   if(!row) return;
   (it.pausas||[]).forEach(p=>{
     if(!p.fin || p.registrada) return;
+    const d = p.det || {};
     const minutosParada = Math.max(0, Math.round(((new Date(p.fin) - new Date(p.inicio))/60000)*100)/100);
     const paradaRegistrada = {
       id: 'it_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
-      item_codigo: 'N/A', item_nombre: 'N/A', es_parada:true, actividad_parada: p.motivo,
-      lote:'N/A', n_personas:it.n_personas||2, n_selladoras:'N/A',
+      item_codigo: d.item_codigo||'N/A', item_nombre: d.item_nombre||'N/A', es_parada:true, actividad_parada: p.motivo,
+      lote: d.lote||'N/A', n_personas: d.n_personas||p.n_personas||it.n_personas||2, n_selladoras:'N/A',
       estado_timer:'detenido', hora_inicio: p.inicio, hora_fin: p.fin, pausas:[],
       minutos_realizado: minutosParada, cantidad:null, unidades_hora:null, meta_selladora:null,
-      pct_cumplimiento:null, clasificacion_kpi:null, observaciones:'Parada durante '+(it.item_nombre||''), responsable:it.responsable||''
+      pct_cumplimiento:null, clasificacion_kpi:null, observaciones:'Parada durante '+(it.item_nombre||''), responsable:d.responsable||it.responsable||'',
+      origen_item_id: it.id
     };
+    if(d.cantidad_parada!=null) paradaRegistrada.cantidad_parada = d.cantidad_parada;
+    if(d.traslado){ paradaRegistrada.traslado = true; paradaRegistrada.cantidad_traslado = d.cantidad_traslado; }
     row.items = (row.items||[]).concat([paradaRegistrada]);
     p.registrada = true;
+    p.registro_id = paradaRegistrada.id;
   });
 }
+// Al reanudar se abre la pantalla de la parada (ítem, cantidad, personas y responsable) y recién al confirmarla se reanuda el sellado.
 async function selReanudarSellado(tipo, itemId){
   const it = selFindItem(tipo, itemId);
   if(!it) return;
-  const nowIso = new Date().toISOString();
-  const pausas = it.pausas||[];
-  if(pausas.length){
-    const ultima = pausas[pausas.length-1];
-    if(!ultima.fin) ultima.fin = nowIso;
-  }
-  it.pausas = pausas;
-  selRegistrarParadasCerradas(tipo, it);
-  it.estado_timer = 'corriendo';
-  it.motivo_pausa_actual = null;
-  await selPersistItems(tipo);
-  selRenderItemList(tipo);
-  toast('Sellado reanudado — la parada quedó registrada');
+  openSelParadaDetalleModal(tipo, itemId, 'reanudar');
 }
 async function selQuickAddLimpieza(tipo){
   const row = await selEnsureSesion(tipo);
@@ -11170,13 +12016,16 @@ function selSearchItem(tipo, q){
     // Solo aparecen los PT ya aprobados en Monitoreo con algo pendiente por sellar.
     // Cada producto+lote aparece como su propia fila en la lista (si el mismo
     // producto tiene dos lotes aprobados distintos, salen dos filas).
-    const pendientes = (cacheSelladoPendientes||[]).filter(p=>!q || p.item_codigo.toUpperCase().includes(q) || (p.item_nombre||'').toUpperCase().includes(q));
-    if(!pendientes.length){ results.innerHTML = '<div class="sr-empty">Sin productos pendientes por sellar. Verifica que la producción esté aprobada en Monitoreo.</div>'; return; }
+    // Solo aparece lo que se TRASLADÓ a esta selladora (Traslado terminado) y aún no se ha sellado por completo.
+    const pendientes = (cacheSelladoPendientes||[])
+      .map(p=>({ ...p, disponible: Math.min(p.pendiente, selDisponibleTraslado(tipo, p.item_codigo, p.lote)) }))
+      .filter(p=>p.disponible > 0.001 && (!q || p.item_codigo.toUpperCase().includes(q) || (p.item_nombre||'').toUpperCase().includes(q)));
+    if(!pendientes.length){ results.innerHTML = '<div class="sr-empty">Aún no hay producto trasladado. Registra un Traslado con “⏸ Registrar parada” (en cualquier selladora) y el producto aparecerá aquí y en todas las selladoras.</div>'; return; }
     results.innerHTML = pendientes.map(p=>`
       <div class="reg-row sel-pendiente-card" onclick="selAddItemPendiente('${tipo}','${escHtml(p.item_codigo)}','${escHtml(p.lote||'')}')">
         <div class="rmain"><span class="sup">${escHtml(p.item_codigo)}</span><span class="big">${escHtml(p.item_nombre)}</span></div>
         <div class="rval" style="text-align:center;"><span class="sup">LOTE</span><span class="big">${escHtml(p.lote||'—')}</span></div>
-        <div class="rval"><span class="sup">${escHtml(p.medida)}</span><span class="big">${fmtNum(p.pendiente)}</span></div>
+        <div class="rval"><span class="sup">${escHtml(p.medida)}</span><span class="big">${fmtNum(p.disponible)}</span></div>
       </div>`).join('');
     return;
   }
@@ -11224,7 +12073,7 @@ async function selAddItem(tipo, esLimpieza, item, extra){
   if(!row) return;
   const meta = SELLADO_ACTIVIDADES.find(a=>a.key===tipo);
   const codigoItem = esLimpieza ? 'N/A' : item.codigo;
-  const previos = (row.items||[]).filter(it=>it.item_codigo===codigoItem);
+  const previos = (row.items||[]).filter(it=>it.item_codigo===codigoItem && !it.es_parada); // las paradas (ej. Traslado) no cuentan para precargar el responsable
   const ultimoResp = previos.length ? previos[previos.length-1].responsable : '';
   const metaGuardada = (!esLimpieza && meta.esSellado) ? ((cacheMetasSellado||[]).find(m=>m.item_codigo===codigoItem)||{}).meta_uh || 0 : null;
   // Cada producto/lote que se empieza a sellar recibe su propio código
@@ -11239,7 +12088,7 @@ async function selAddItem(tipo, esLimpieza, item, extra){
     lote: esLimpieza ? 'N/A' : ((extra && extra.lote) ? extra.lote : ddMMyy(todayISO())),
     pendiente_al_iniciar: (extra && extra.pendienteAlIniciar!=null) ? extra.pendienteAlIniciar : null,
     n_personas: 2,
-    n_selladoras: meta.esSellado ? '1' : 'N/A',
+    n_selladoras: meta.esSellado ? selNumeroSelladora(meta) : 'N/A',
     estado_timer: 'corriendo',
     hora_inicio: ahoraIso, hora_fin: null, pausas: [],
     minutos_realizado: null,
@@ -11258,6 +12107,13 @@ async function selAddItem(tipo, esLimpieza, item, extra){
   selRenderItemList(tipo);
   selManageLiveTimers();
   toast(esLimpieza ? 'Actividad iniciada' : 'Iniciado: ' + item.nombre);
+}
+// Número de la selladora (Selladora 1 → "1", Selladora 2 → "2"): lo define la propia tarjeta; solo Producción lo puede cambiar
+function selNumeroSelladora(meta){
+  const m = String((meta && (meta.label || meta.nombre || meta.key)) || '').match(/(\d+)/);
+  if(m) return m[1];
+  const idx = SELLADO_ACTIVIDADES.filter(a=>a.esSellado).findIndex(a=>meta && a.key===meta.key);
+  return String(idx >= 0 ? idx + 1 : 1);
 }
 function selFindItem(tipo, itemId){
   const row = SelladoState.sesiones[tipo];
@@ -11593,6 +12449,150 @@ function selCalcMinutos(it){
   });
   return Math.max(0, (totalMs - pausadoMs) / 60000);
 }
+/* ===== Paradas de un sellado: cambiar su hora, quitarlas o agregar una que se olvidó ===== */
+let SelPausasEdit = null;
+function hmToISOEnFecha(hm, refIso){
+  const base = refIso ? new Date(refIso) : new Date();
+  const [h, m] = String(hm).split(':').map(Number);
+  return new Date(base.getFullYear(), base.getMonth(), base.getDate(), h, m, 0, 0).toISOString();
+}
+function selHM(iso){ return iso ? new Date(iso).toTimeString().slice(0,5) : ''; }
+function selPausasEditInit(it, cb){
+  SelPausasEdit = { itemId: it.id, ref: it.hora_inicio || null, cb: cb || null,
+    filas: (it.pausas||[]).map(p=>({ orig:{ ...p }, nueva:false, eliminada:false, motivo:p.motivo||'Pausa',
+      ini: selHM(p.inicio), fin: selHM(p.fin), abierta: !p.fin, personas: p.n_personas || it.n_personas || 2 })) };
+}
+function selPausasEditPintar(){
+  const w = document.getElementById('selPausasEditWrap');
+  if(!w || !SelPausasEdit) return;
+  const filas = SelPausasEdit.filas;
+  const acts = SEL_TIPOS_PARADA.filter(t=>!selEsTraslado(t.nombre));
+  const visibles = filas.filter(f=>!f.eliminada).length;
+  w.innerHTML = (visibles ? '' : '<div class="sub" style="margin-bottom:6px;">Sin pausas registradas en este sellado.</div>') + filas.map((f,i)=> f.eliminada ? '' : `
+    <div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;background:#fff;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+        <div style="flex:1;font-weight:700;font-size:13px;">${f.nueva
+          ? `<select onchange="selPausasEditCambio(${i},'motivo',this.value)">${acts.map(t=>`<option value="${escHtml(t.nombre)}" ${t.nombre===f.motivo?'selected':''}>${escHtml(t.nombre)}</option>`).join('')}</select>`
+          : '⏸ ' + escHtml(f.motivo)}</div>
+        <button type="button" title="Quitar esta parada" onclick="selPausasEditQuitar(${i})" style="width:24px;height:24px;border:none;border-radius:50%;background:var(--danger);color:#fff;font-size:12px;line-height:1;">✕</button>
+      </div>
+      <div class="field-row" style="margin-bottom:0;">
+        <div class="field" style="margin-bottom:0;"><label>Inicio</label><input type="time" value="${f.ini}" oninput="selPausasEditCambio(${i},'ini',this.value)"></div>
+        <div class="field" style="margin-bottom:0;"><label>Fin</label>${f.abierta
+          ? '<div class="sub" style="padding-top:10px;">En curso: se cierra con la hora de fin</div>'
+          : `<input type="time" value="${f.fin}" oninput="selPausasEditCambio(${i},'fin',this.value)">`}</div>
+      </div>
+      ${f.nueva ? `<div class="field" style="margin:6px 0 0;"><label>N° de personas</label><input type="text" inputmode="numeric" value="${f.personas}" oninput="selPausasEditCambio(${i},'personas',this.value)"></div>` : ''}
+    </div>`).join('') + `<button type="button" class="btn ghost" style="width:100%;" onclick="selPausasEditAgregar()">+ Agregar pausa olvidada</button>`;
+}
+function selPausasEditCambio(i, campo, valor){
+  if(!SelPausasEdit || !SelPausasEdit.filas[i]) return;
+  SelPausasEdit.filas[i][campo] = valor;
+  if(SelPausasEdit.cb) SelPausasEdit.cb();
+}
+function selPausasEditQuitar(i){
+  if(!SelPausasEdit || !SelPausasEdit.filas[i]) return;
+  const f = SelPausasEdit.filas[i];
+  if(f.nueva) SelPausasEdit.filas.splice(i, 1); else f.eliminada = true;
+  selPausasEditPintar();
+  if(SelPausasEdit.cb) SelPausasEdit.cb();
+}
+function selPausasEditAgregar(){
+  if(!SelPausasEdit) return;
+  const acts = SEL_TIPOS_PARADA.filter(t=>!selEsTraslado(t.nombre));
+  SelPausasEdit.filas.push({ orig:null, nueva:true, eliminada:false, motivo: acts.length ? acts[0].nombre : 'Parada', ini:'', fin:'', abierta:false, personas:2 });
+  selPausasEditPintar();
+}
+// Paradas tal como quedarían (con fechas completas), para calcular el tiempo antes de guardar
+function selPausasEditLeer(){
+  if(!SelPausasEdit) return null;
+  return SelPausasEdit.filas.filter(f=>!f.eliminada && f.ini).map(f=>({
+    inicio: hmToISOEnFecha(f.ini, SelPausasEdit.ref), fin: f.abierta ? null : (f.fin ? hmToISOEnFecha(f.fin, SelPausasEdit.ref) : null), motivo: f.motivo }));
+}
+function selPausasEditHaCambiado(){
+  if(!SelPausasEdit) return false;
+  return SelPausasEdit.filas.some(f=> f.nueva || f.eliminada || f.ini !== selHM(f.orig.inicio) || (!f.abierta && f.fin !== selHM(f.orig.fin)) );
+}
+function selPausasEditValidar(){
+  if(!SelPausasEdit) return null;
+  for(const f of SelPausasEdit.filas){
+    if(f.eliminada) continue;
+    if(!f.ini) return 'Escribe la hora de inicio de la parada “' + f.motivo + '”';
+    if(!f.abierta){
+      if(!f.fin) return 'Escribe la hora de fin de la parada “' + f.motivo + '”';
+      if(!(hmToISOEnFecha(f.fin, SelPausasEdit.ref) > hmToISOEnFecha(f.ini, SelPausasEdit.ref))) return 'En la parada “' + f.motivo + '” la hora de fin debe ser posterior a la de inicio';
+    }
+  }
+  return null;
+}
+// Aplica los cambios al sellado y mantiene sincronizados los registros de parada de la sesión
+function selAplicarPausasEditadas(row, it){
+  const E = SelPausasEdit; if(!E || !row) return;
+  const iso = hm => hmToISOEnFecha(hm, E.ref);
+  const buscarRec = o => o.registro_id
+    ? (row.items||[]).find(x=>x.id===o.registro_id)
+    : (row.items||[]).find(x=>x.es_parada && x.actividad_parada===o.motivo && x.hora_inicio===o.inicio && x.hora_fin===o.fin);
+  const nuevas = [];
+  E.filas.forEach(f=>{
+    if(f.nueva){
+      if(f.eliminada) return;
+      nuevas.push({ inicio: iso(f.ini), fin: iso(f.fin), motivo: f.motivo, n_personas: parseInt(f.personas,10) || it.n_personas || 2, registrada:false,
+                    det:{ responsable: it.responsable||'', n_personas: parseInt(f.personas,10) || it.n_personas || 2, traslado:false } });
+      return;
+    }
+    const rec = f.orig.registrada ? buscarRec(f.orig) : null;
+    if(f.eliminada){ if(rec) row.items = row.items.filter(x=>x!==rec); return; }
+    const p = { ...f.orig, inicio: iso(f.ini), fin: f.abierta ? null : iso(f.fin) };
+    if(rec && !f.abierta){
+      rec.hora_inicio = p.inicio; rec.hora_fin = p.fin;
+      rec.minutos_realizado = Math.max(0, Math.round(((new Date(p.fin) - new Date(p.inicio))/60000)*100)/100);
+      p.registro_id = rec.id;
+    }
+    nuevas.push(p);
+  });
+  it.pausas = nuevas;
+}
+// Minutos productivos entre dos instantes: (fin − inicio) − las paradas que caen dentro de ese rango.
+// Ej.: 7:30 a 8:30 con una parada de 7:40 a 7:50 → 60 − 10 = 50 min productivos.
+function selMinutosParadasEnRango(it, iniIso, finIso){
+  const a = new Date(iniIso).getTime(), b = new Date(finIso).getTime();
+  if(!(b > a)) return 0;
+  let ms = 0;
+  (it.pausas||[]).forEach(p=>{
+    if(!p.inicio) return;
+    const s = Math.max(new Date(p.inicio).getTime(), a);
+    const e = Math.min(p.fin ? new Date(p.fin).getTime() : b, b); // una pausa abierta se cierra en la hora de fin
+    if(e > s) ms += (e - s);
+  });
+  return ms / 60000;
+}
+function selMinutosProductivosEnRango(it, iniIso, finIso){
+  const a = new Date(iniIso).getTime(), b = new Date(finIso).getTime();
+  if(!(b > a)) return 0;
+  return Math.max(0, (b - a)/60000 - selMinutosParadasEnRango(it, iniIso, finIso));
+}
+function selResumenTiempoGenerico(it, idIni, idFin, idRes){
+  const el = document.getElementById(idRes), eHi = document.getElementById(idIni), eHf = document.getElementById(idFin);
+  if(!it || !el || !eHi || !eHf) return;
+  const hayEditorPausas = SelPausasEdit && SelPausasEdit.itemId === it.id;
+  const editadoHoras = (eHi.value !== (eHi.dataset.orig||'')) || (eHf.value !== (eHf.dataset.orig||''));
+  const editadoPausas = hayEditorPausas && selPausasEditHaCambiado();
+  const itCalc = hayEditorPausas ? { ...it, pausas: selPausasEditLeer() } : it;
+  let prod, par;
+  if((editadoHoras || editadoPausas) && eHi.value && eHf.value){
+    const a = hmToISOEnFecha(eHi.value, it.hora_inicio), b = hmToISOEnFecha(eHf.value, it.hora_inicio);
+    par = selMinutosParadasEnRango(itCalc, a, b);
+    prod = selMinutosProductivosEnRango(itCalc, a, b);
+  } else {
+    prod = it.estado_timer==='detenido' && it.minutos_realizado!=null ? it.minutos_realizado : selCalcMinutos(it);
+    par = (it.pausas||[]).reduce((s,p)=>{ const pi = p.inicio ? new Date(p.inicio).getTime() : null; const pf = p.fin ? new Date(p.fin).getTime() : Date.now(); return pi ? s + Math.max(0, pf - pi) : s; }, 0) / 60000;
+  }
+  const f = m => (Math.round(m*10)/10).toString().replace('.', ',') + ' min';
+  el.innerHTML = `Tiempo productivo: <b>${f(prod)}</b> &nbsp;·&nbsp; Pausas: <b>${f(par)}</b>${(editadoHoras||editadoPausas) ? ' <span style="color:#B45309;">(recalculado con tus cambios)</span>' : ' <span style="color:#64748B;">(del cronómetro)</span>'}`;
+}
+function selActualizarResumenTiempo(tipo, itemId){
+  selResumenTiempoGenerico(selFindItem(tipo, itemId), 'selHoraInicioManual', 'selHoraFinManual', 'selResumenTiempo');
+}
 function selRecalcKpi(it){
   if(it.minutos_realizado && it.cantidad!=null){
     it.unidades_hora = Math.round((it.cantidad / (it.minutos_realizado/60)) * 100) / 100;
@@ -11709,7 +12709,17 @@ function selRenderItemList(tipo){
   }
   if(!items.length){ wrap.innerHTML = '<div class="empty-state">Sin ítems agregados todavía.</div>'; selManageLiveTimers(); return; }
   const activosParaMostrar = activos;
-  if(!activosParaMostrar.length){ wrap.innerHTML = ''; selManageLiveTimers(); return; }
+  const terminados = items.filter(i=>!i.es_parada && i.estado_timer==='detenido');
+  const terminadosHtml = terminados.length ? `
+    <details class="sel-terminados" style="margin-top:8px;">
+      <summary style="cursor:pointer;font-size:12px;font-weight:700;color:var(--muted);">Terminados de la fecha elegida (${terminados.length}) — toca uno para corregir horas o pausas</summary>
+      ${terminados.map(i=>`
+        <div class="sel-item-row" style="cursor:pointer;" onclick="openSelItemModal('${tipo}','${i.id}')">
+          <div class="sel-item-name"><span class="sup">${escHtml(i.item_codigo)}${i.lote&&i.lote!=='N/A'?(' · Lote '+escHtml(i.lote)):''}</span><span class="nm">${escHtml(i.item_nombre!=='N/A'?i.item_nombre:'Actividad sin producto')}</span></div>
+          <div style="font-size:12px;color:var(--muted);">${i.cantidad!=null?fmtNum(i.cantidad)+' u · ':''}${i.minutos_realizado!=null?fmtNum(i.minutos_realizado)+' min · ':''}${selHM(i.hora_inicio)}–${selHM(i.hora_fin)}</div>
+        </div>`).join('')}
+    </details>` : '';
+  if(!activosParaMostrar.length){ wrap.innerHTML = terminadosHtml; selManageLiveTimers(); return; }
   wrap.innerHTML = activosParaMostrar.map(it=>{
     const tiempoDisplay = selFmtTiempo(selCalcMinutos(it));
     let botones, nombreHtml, rowClass='', pausaLiveHtml='';
@@ -11744,7 +12754,7 @@ function selRenderItemList(tipo){
       ${pausaLiveHtml}
       ${it.responsable ? `<div style="font-size:11px;color:var(--muted);text-align:center;">${escHtml(it.responsable)}</div>` : ''}
     </div>`;
-  }).join('');
+  }).join('') + terminadosHtml;
   selManageLiveTimers();
 }
 async function selDetenerParadaIndependiente(tipo, itemId){
@@ -11758,23 +12768,57 @@ async function selDetenerParadaIndependiente(tipo, itemId){
   selRenderItemList(tipo);
   toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
 }
-function openSelParadaDetalleModal(tipo, itemId){
-  const it = selFindItem(tipo, itemId);
+let SelParadaCtx = null;
+function selEsTraslado(nombre){ return String(nombre||'').trim().toLowerCase() === 'traslado'; }
+function openSelParadaDetalleModal(tipo, itemId, modo, extra){
+  modo = modo || 'terminar';
+  const it = itemId ? selFindItem(tipo, itemId) : null;
   if(!it) return;
+  let reg, actividad, personas, hiVal = '', hfVal = '';
+  if(modo === 'reanudar'){
+    const ps = it.pausas||[], ultima = ps[ps.length-1] || {};
+    reg = ultima.det || {}; actividad = ultima.motivo || it.motivo_pausa_actual || 'Parada';
+    personas = reg.n_personas || ultima.n_personas || it.n_personas || 2;
+  } else {
+    reg = it; actividad = it.actividad_parada || 'Parada'; personas = it.n_personas || 2;
+    hiVal = selHM(it.hora_inicio); hfVal = nowHM();
+  }
+  const esTraslado = selEsTraslado(actividad);
   const responsables = (cacheCatalogosSellado||[]);
+  const respActual = reg.responsable || (it && it.responsable) || '';
+  const conHoras = (modo === 'terminar');
+  SelParadaCtx = { tipo, itemId, modo, actividad, esTraslado };
+  SelParadaItemState = { itemId:null, itemNombre:null, lote:null, pendiente:null };
+  if(reg.item_codigo && reg.item_codigo!=='N/A') SelParadaItemState = { itemId: reg.item_codigo, itemNombre: reg.item_nombre, lote: reg.lote||null, pendiente:null };
+  const cantPrevia = esTraslado ? (reg.cantidad_traslado!=null ? fmtRaw(reg.cantidad_traslado) : '') : (reg.cantidad_parada && reg.cantidad_parada!=='N/A' ? escHtml(reg.cantidad_parada) : '');
+  const sub = modo==='reanudar' ? 'Registra la parada para reanudar el sellado' : 'Terminar y registrar detalle. Si la parada fue en otro momento, cambia las horas de inicio y fin.';
   openModal(`
-    <h3>${escHtml(it.actividad_parada||'Parada')}</h3>
-    <div class="msub">Terminar y registrar detalle</div>
+    <h3>${escHtml(actividad)}</h3>
+    <div class="msub">${sub}</div>
+    ${conHoras ? `
+    <div class="field-row">
+      <div class="field"><label>Hora de inicio</label><input type="time" id="selParadaHI" data-orig="${hiVal}" value="${hiVal}" oninput="selParadaActualizarDur()"></div>
+      <div class="field"><label>Hora de fin</label><input type="time" id="selParadaHF" data-orig="${hfVal}" value="${hfVal}" oninput="selParadaActualizarDur()"></div>
+    </div>
+    <div class="sub" id="selParadaDur" style="margin:-6px 0 10px;font-weight:700;"></div>` : ''}
+    ${esTraslado ? `
+    <div class="field">
+      <label>Producto que se traslada *</label>
+      <input type="text" id="selTrasladoBuscar" placeholder="Filtrar la lista de productos producidos…" oninput="selTrasladoFiltrar(this.value)">
+      <div id="selTrasladoLista" style="max-height:220px;overflow:auto;margin-top:6px;"></div>
+      <div class="sub" id="selTrasladoElegido" style="margin-top:4px;"></div>
+    </div>` : `
     <div class="field">
       <label>Ítem utilizado (opcional)</label>
-      <input type="text" id="selParadaItemSearch" placeholder="Buscar por código o nombre… (si no aplica, deja vacío)" value="${it.item_codigo && it.item_codigo!=='N/A' ? escHtml(it.item_codigo+' — '+it.item_nombre) : ''}" oninput="selParadaBuscarItem(this.value)">
+      <input type="text" id="selParadaItemSearch" placeholder="Buscar por código o nombre… (si no aplica, deja vacío)" value="${SelParadaItemState.itemId ? escHtml(SelParadaItemState.itemId+' — '+(SelParadaItemState.itemNombre||'')) : ''}" oninput="selParadaBuscarItem(this.value)">
       <div class="search-results" id="selParadaItemResults"></div>
-    </div>
-    <div class="field"><label>Cantidad utilizada (opcional)</label><input type="text" inputmode="decimal" id="selParadaCantidad" placeholder="Si no aplica, deja vacío" value="${it.cantidad_parada && it.cantidad_parada!=='N/A' ? escHtml(it.cantidad_parada) : ''}"></div>
+    </div>`}
+    <div class="field"><label>${esTraslado ? 'Cantidad trasladada *' : 'Cantidad realizada (opcional)'}</label><input type="text" inputmode="decimal" id="selParadaCantidad" placeholder="${esTraslado ? 'Obligatoria' : 'Si no aplica, deja vacío'}" value="${cantPrevia}"></div>
+    <div class="field"><label>N° de personas *</label><input type="text" inputmode="numeric" id="selParadaPersonas" value="${personas}"></div>
     <div class="field"><label>Responsable *</label>
       <select id="selParadaResp">
         <option value="">Selecciona…</option>
-        ${responsables.map(r=>`<option value="${escHtml(r.nombre)}" ${it.responsable===r.nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('')}
+        ${responsables.map(r=>`<option value="${escHtml(r.nombre)}" ${respActual===r.nombre?'selected':''}>${escHtml(r.nombre)}</option>`).join('')}
       </select>
     </div>
     <div class="inline-add" style="margin-bottom:14px;">
@@ -11783,23 +12827,56 @@ function openSelParadaDetalleModal(tipo, itemId){
     </div>
     <div class="modal-actions">
       <button class="btn ghost" onclick="closeModal()">Cancelar</button>
-      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarParadaDetalle('${tipo}','${itemId}')">Terminar parada</button>
+      <button class="btn primary" style="--accent:var(--materia)" onclick="selConfirmarParadaDetalle('${tipo}',${itemId?`'${itemId}'`:'null'})">${modo==='reanudar' ? '▶ Reanudar sellado' : 'Terminar parada'}</button>
     </div>
   `);
-  SelParadaItemState = { itemId: null, itemNombre: null };
-  if(it.item_codigo && it.item_codigo!=='N/A') SelParadaItemState = { itemId: it.item_codigo, itemNombre: it.item_nombre };
+  if(conHoras) selParadaActualizarDur();
+  if(esTraslado){
+    selTrasladoFiltrar('');
+    if(SelParadaItemState.itemId){ const e = document.getElementById('selTrasladoElegido'); if(e) e.innerHTML = 'Elegido: <b>'+escHtml(SelParadaItemState.itemNombre||'')+'</b> · Lote '+escHtml(SelParadaItemState.lote||'—'); }
+  }
 }
-let SelParadaItemState = { itemId:null, itemNombre:null };
+// Duración de la parada con las horas que se ven: fin − inicio (como si hubiera estado el cronómetro)
+function selParadaActualizarDur(){
+  const el = document.getElementById('selParadaDur'), hi = document.getElementById('selParadaHI'), hf = document.getElementById('selParadaHF');
+  if(!el || !hi || !hf) return;
+  if(!hi.value || !hf.value){ el.textContent = ''; return; }
+  const ref = selRefFechaSesion(); // las horas se interpretan en la fecha de la sesión de Sellado que se está viendo
+  const min = (new Date(hmToISOEnFecha(hf.value, ref)) - new Date(hmToISOEnFecha(hi.value, ref))) / 60000;
+  el.innerHTML = min > 0 ? 'Duración de la parada: <span style="color:var(--materia);">' + (Math.round(min*10)/10).toString().replace('.', ',') + ' min</span>' : '<span style="color:var(--danger);">La hora de fin debe ser posterior a la de inicio</span>';
+}
+let SelParadaItemState = { itemId:null, itemNombre:null, lote:null, pendiente:null };
+// Traslado: el ítem se ELIGE de la lista de productos producidos (no se escribe libremente)
+function selTrasladoFiltrar(q){
+  const lista = document.getElementById('selTrasladoLista'); if(!lista) return;
+  q = (q||'').trim().toUpperCase();
+  const ps = (cacheSelladoPendientes||[]).filter(p=>!q || p.item_codigo.toUpperCase().includes(q) || (p.item_nombre||'').toUpperCase().includes(q));
+  if(!ps.length){ lista.innerHTML = '<div class="sr-empty">No hay producto producido pendiente por sellar.</div>'; return; }
+  lista.innerHTML = ps.map(p=>{
+    const sel = SelParadaItemState.itemId===p.item_codigo && (SelParadaItemState.lote||'')===(p.lote||'');
+    return `<div class="reg-row" style="${sel?'outline:2px solid var(--materia);':''}" onclick="selTrasladoElegir('${escHtml(p.item_codigo)}','${escHtml(p.lote||'')}')">
+      <div class="rmain"><span class="sup">${escHtml(p.item_codigo)} · Lote ${escHtml(p.lote||'—')}</span><span class="big">${escHtml(p.item_nombre)}</span></div>
+      <div class="rval"><span class="sup">PENDIENTE</span><span class="big">${fmtNum(p.pendiente)}</span></div>
+    </div>`;
+  }).join('');
+}
+function selTrasladoElegir(codigo, lote){
+  const p = (cacheSelladoPendientes||[]).find(x=>x.item_codigo===codigo && (x.lote||'')===(lote||''));
+  if(!p) return;
+  SelParadaItemState = { itemId:p.item_codigo, itemNombre:p.item_nombre, lote:p.lote||null, pendiente:p.pendiente };
+  const e = document.getElementById('selTrasladoElegido'); if(e) e.innerHTML = 'Elegido: <b>'+escHtml(p.item_nombre)+'</b> · Lote '+escHtml(p.lote||'—')+' · pendiente '+fmtNum(p.pendiente);
+  selTrasladoFiltrar((document.getElementById('selTrasladoBuscar')||{}).value||'');
+}
 function selParadaBuscarItem(q){
   q = (q||'').trim().toUpperCase();
   const results = document.getElementById('selParadaItemResults');
   if(!results) return;
-  if(!q){ results.innerHTML=''; SelParadaItemState = { itemId:null, itemNombre:null }; return; }
+  if(!q){ results.innerHTML=''; SelParadaItemState = { itemId:null, itemNombre:null, lote:null, pendiente:null }; return; }
   const matches = (cacheItems||[]).filter(i=>i.activo && (i.codigo.toUpperCase().includes(q)||i.nombre.toUpperCase().includes(q))).slice(0,15);
   results.innerHTML = matches.length ? matches.map(m=>`<div class="sr-item" onclick="selParadaElegirItem('${escHtml(m.codigo)}','${escHtml(m.nombre)}')"><b>${escHtml(m.codigo)}</b>${escHtml(m.nombre)}</div>`).join('') : '<div class="sr-empty">Sin resultados</div>';
 }
 function selParadaElegirItem(codigo, nombre){
-  SelParadaItemState = { itemId:codigo, itemNombre:nombre };
+  SelParadaItemState = { itemId:codigo, itemNombre:nombre, lote:null, pendiente:null };
   const s = document.getElementById('selParadaItemSearch'); if(s) s.value = codigo+' — '+nombre;
   const r = document.getElementById('selParadaItemResults'); if(r) r.innerHTML = '';
 }
@@ -11819,24 +12896,64 @@ async function selParadaAddResponsable(){
   input.value = '';
   toast('Responsable agregado');
 }
+// Confirma la pantalla de la parada: al TERMINAR una parada suelta, o al REANUDAR un sellado en pausa.
 async function selConfirmarParadaDetalle(tipo, itemId){
-  const it = selFindItem(tipo, itemId);
-  if(!it) return;
+  const ctx = SelParadaCtx;
+  const it = itemId ? selFindItem(tipo, itemId) : null;
+  if(!ctx || !it) return;
   const responsable = document.getElementById('selParadaResp').value;
   if(!responsable){ toast('El responsable es obligatorio'); return; }
+  const personas = parseInt((document.getElementById('selParadaPersonas').value||'').replace(',','.'), 10);
+  if(!(personas > 0)){ toast('Escribe el N° de personas'); return; }
   const cantidadTxt = (document.getElementById('selParadaCantidad').value||'').trim();
-  it.item_codigo = SelParadaItemState.itemId || 'N/A';
-  it.item_nombre = SelParadaItemState.itemNombre || 'N/A';
-  it.cantidad_parada = cantidadTxt || 'N/A';
-  it.responsable = responsable;
+  const cantidadNum = parseFloat(cantidadTxt.replace(',','.'));
+  const det = { item_codigo: SelParadaItemState.itemId || 'N/A', item_nombre: SelParadaItemState.itemNombre || 'N/A', lote:'N/A',
+                cantidad_parada: cantidadTxt || 'N/A', responsable, n_personas: personas, traslado:false };
+  if(ctx.esTraslado){
+    if(!SelParadaItemState.itemId){ toast('Elige el producto que se está trasladando'); return; }
+    if(!(cantidadNum > 0)){ toast('La cantidad trasladada es obligatoria'); return; }
+    const p = (cacheSelladoPendientes||[]).find(x=>x.item_codigo===SelParadaItemState.itemId && (x.lote||'')===(SelParadaItemState.lote||''));
+    if(p && cantidadNum > p.pendiente + 0.001){ toast('No se puede trasladar más de lo pendiente por sellar (' + fmtNum(p.pendiente) + ')'); return; }
+    det.lote = SelParadaItemState.lote || 'N/A'; det.cantidad_traslado = cantidadNum; det.cantidad_parada = String(cantidadNum); det.traslado = true;
+  }
   const nowIso = new Date().toISOString();
-  it.hora_fin = nowIso;
-  it.minutos_realizado = Math.round(selCalcMinutos(it)*100)/100;
-  it.estado_timer = 'detenido';
-  await selPersistItems(tipo);
-  closeModal();
-  selRenderItemList(tipo);
-  toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
+  // Horas de la parada: si al terminarla se cambió el inicio o el fin, el tiempo sale de esas horas (como si hubiera estado el cronómetro)
+  const hiEl = document.getElementById('selParadaHI'), hfEl = document.getElementById('selParadaHF');
+  let iniIso = null, finIso = null;
+  if(ctx.modo === 'terminar' && hiEl && hfEl){
+    const editado = (hiEl.value !== hiEl.dataset.orig) || (hfEl.value !== hfEl.dataset.orig);
+    if(editado){
+      if(!hiEl.value || !hfEl.value){ toast('Escribe la hora de inicio y la de fin'); return; }
+      const err = selValidarHorasParada(hiEl.value, hfEl.value, selRefFechaSesion());
+      if(err){ toast(err); return; }
+      iniIso = hmToISOEnFecha(hiEl.value, selRefFechaSesion()); finIso = hmToISOEnFecha(hfEl.value, selRefFechaSesion());
+    }
+  }
+  if(ctx.modo === 'reanudar'){
+    const ps = it.pausas||[], ultima = ps[ps.length-1];
+    if(ultima){ if(!ultima.fin) ultima.fin = nowIso; ultima.det = det; }
+    it.pausas = ps;
+    selRegistrarParadasCerradas(tipo, it);
+    it.estado_timer = 'corriendo';
+    it.motivo_pausa_actual = null;
+    await selPersistItems(tipo);
+    closeModal();
+    selRenderItemList(tipo);
+    toast('Sellado reanudado — la parada quedó registrada');
+  } else {
+    it.item_codigo = det.item_codigo; it.item_nombre = det.item_nombre; it.lote = det.lote;
+    it.cantidad_parada = det.cantidad_parada; it.responsable = responsable; it.n_personas = personas;
+    it.traslado = det.traslado; if(det.traslado) it.cantidad_traslado = det.cantidad_traslado;
+    if(iniIso){ it.hora_inicio = iniIso; it.hora_fin = finIso; } else { it.hora_fin = nowIso; }
+    it.minutos_realizado = Math.round(((new Date(it.hora_fin) - new Date(it.hora_inicio))/60000)*100)/100;
+    it.estado_timer = 'detenido';
+    await selPersistItems(tipo);
+    closeModal();
+    selRenderItemList(tipo);
+    toast('Parada registrada: ' + fmtNum(it.minutos_realizado) + ' min');
+  }
+  SelParadaCtx = null;
+  if(det.traslado){ await selCargarPendientesSellado(); selRefrescarPendientesEnTodasLasSelladoras(); toast('Traslado registrado: el producto ya está disponible en todas las selladoras'); }
 }
 // Cajas/cartones que la fórmula del producto indica para esa cantidad a sellar
 // (mismo criterio que Etiquetado usa para las fundas, pero con la lista de cajas).
@@ -11854,11 +12971,12 @@ function openSelItemModal(tipo, itemId, finalizando){
   // Un ítem ya finalizado de un lote que ya se despachó no se puede volver a editar.
   if(itRevisar && !finalizando && itRevisar.hora_fin && !itRevisar.es_parada && itRevisar.item_codigo && itRevisar.item_codigo!=='N/A'){
     despMensajeBloqueoLote(itRevisar.item_codigo, itRevisar.lote).then(m=>{
-      if(m) avisar(m); else openSelItemModalNormal(tipo, itemId, finalizando);
+      if(m) avisar(m); else selCargarPendientesSellado().catch(()=>{}).then(()=>openSelItemModalNormal(tipo, itemId, finalizando));
     });
     return;
   }
-  openSelItemModalNormal(tipo, itemId, finalizando);
+  // Se recalcula lo pendiente justo antes de abrir: si otra selladora ya selló parte, aquí se ve al instante
+  selCargarPendientesSellado().catch(()=>{}).then(()=>openSelItemModalNormal(tipo, itemId, finalizando));
 }
 function openSelItemModalNormal(tipo, itemId, finalizando){
   const it = selFindItem(tipo, itemId);
@@ -11869,6 +12987,10 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
   const metaUh = metaActual ? metaActual.meta_uh : 0;
   const horaFinValor = it.hora_fin ? new Date(it.hora_fin).toTimeString().slice(0,5) : (finalizando ? nowHM() : '');
   const loteBloqueado = it.pendiente_al_iniciar!=null; // vino auto-cargado desde Cronograma/Monitoreo
+  const esAdminSel = !permisoActual();                 // Producción/Calidad: pueden corregir el N° de selladora
+  const pendAct = selPendienteActual(it);               // "por sellar" al día, aunque se haya sellado en otra selladora
+  if(!it.es_parada) selPausasEditInit(it, ()=>selActualizarResumenTiempo(tipo, itemId)); else SelPausasEdit = null;
+  setTimeout(()=>{ selPausasEditPintar(); selActualizarResumenTiempo(tipo, itemId); }, 0);
   openModal(`
     <div class="mhead"><span class="sup">${escHtml(it.item_codigo)}</span><h3>${escHtml(it.item_nombre)}</h3><div class="msub">${escHtml(meta.nombre||'Sellado')}</div></div>
     <div class="sec azul"><div class="sec-h">Lote y personal</div><div class="sec-b">
@@ -11882,21 +13004,23 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
     </div>
     <div class="field-row">
       <div class="field"><label>N° Personas</label><input type="text" inputmode="numeric" id="selPersonas" value="${it.n_personas!=null?it.n_personas:2}"></div>
-      <div class="field"><label>N° Selladoras</label><input type="text" id="selSelladoras" value="${escHtml(it.n_selladoras||(meta.esSellado?'1':'N/A'))}" ${meta.esSellado?'':'disabled'}></div>
+      <div class="field"><label>N° Selladora</label><input type="text" id="selSelladoras" value="${escHtml(meta.esSellado ? (esAdminSel ? (it.n_selladoras||selNumeroSelladora(meta)) : selNumeroSelladora(meta)) : 'N/A')}" ${(meta.esSellado && esAdminSel)?'':'disabled'}></div>
     </div>
     </div></div>
     <div class="sec turquesa"><div class="sec-h">Tiempos</div><div class="sec-b">
     <div class="field-row">
-      <div class="field"><label>Hora de inicio</label><input type="time" id="selHoraInicioManual" value="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}"></div>
-      <div class="field"><label>Hora de fin</label><input type="time" id="selHoraFinManual" value="${horaFinValor}"></div>
+      <div class="field"><label>Hora de inicio</label><input type="time" id="selHoraInicioManual" data-orig="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}" value="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}" oninput="selActualizarResumenTiempo('${tipo}','${itemId}')"></div>
+      <div class="field"><label>Hora de fin</label><input type="time" id="selHoraFinManual" data-orig="${horaFinValor}" value="${horaFinValor}" oninput="selActualizarResumenTiempo('${tipo}','${itemId}')"></div>
     </div>
-    <div class="sub" style="margin-top:-8px;margin-bottom:12px;">Se pueden escribir manualmente si se olvidó presionar Iniciar/Finalizar en el momento; el tiempo se calcula solo.</div>
+    <div id="selResumenTiempo" style="background:#F0FDFA;border:1px solid #99F6E4;border-radius:8px;padding:10px 12px;margin-bottom:6px;"></div>
+    <div class="sub" style="margin-bottom:12px;">Tiempo productivo = (hora de fin − hora de inicio) − las paradas. Si no tocas las horas ni las paradas, se usa el cronómetro; si cambias algo, se recalcula.</div>
+    ${!it.es_parada ? `<div class="field"><label>Pausas del sellado (paradas que detuvieron el sellado)</label><div id="selPausasEditWrap"></div><div class="sub" style="margin-top:4px;">Cambia la hora de una pausa, quítala o agrega una que se olvidó: se descuenta del tiempo del sellado. Si la parada se hizo <b>al mismo tiempo</b> que el sellado, regístrala en “Registrar parada” (no descuenta).</div></div>` : ''}
     </div></div>
     ${meta.esSellado && it.item_codigo!=='N/A' ? `
     <div class="sec verde"><div class="sec-h">Producción</div><div class="sec-b">
     <div class="field-row">
       <div class="field"><label>Meta por Selladora (u/h)</label><input type="text" value="${fmtRaw(metaUh)}" disabled></div>
-      ${it.pendiente_al_iniciar!=null ? `<div class="field"><label>Cantidad por sellar</label><input type="text" value="${fmtRaw(it.pendiente_al_iniciar)}" disabled></div>` : ''}
+      ${pendAct!=null ? `<div class="field"><label>Cantidad por sellar</label><input type="text" id="selPorSellar" data-valor="${pendAct}" value="${fmtRaw(pendAct)}" disabled></div>` : ''}
     </div>
     <div class="field"><label>Cantidad sellada</label><input type="text" inputmode="decimal" id="selCantidad" placeholder="Escribe la cantidad realmente sellada…" value="${it.cantidad!=null?fmtRaw(it.cantidad):''}"></div>
     <div class="sub" style="margin-top:-8px;margin-bottom:12px;">La meta se define en Configuración → Metas de Sellado.</div>
@@ -11931,13 +13055,39 @@ function openSelItemModalNormal(tipo, itemId, finalizando){
       <button class="btn primary" style="--accent:var(--materia)" onclick="saveSelItemModal('${tipo}','${itemId}')">Guardar</button>
     </div>
   `);
+  SelModalCtx = { tipo, itemId };
   if(meta.esSellado && it.item_codigo!=='N/A'){
-    const cantidadRef = it.cantidad!=null ? it.cantidad : it.pendiente_al_iniciar;
-    SelCartonState = { itemId, cartones: (it.cartones && it.cartones.length) ? it.cartones.slice() : cajasDeFormula(it.item_codigo, cantidadRef) };
+    const cantidadRef = it.cantidad!=null ? it.cantidad : pendAct;
+    const teoricas = cajasDeFormula(it.item_codigo, cantidadRef);
+    // Si ya había cajas anotadas, se conservan, pero su cantidad teórica se actualiza con lo que falta por sellar
+    const previas = (it.cartones && it.cartones.length) ? it.cartones.map(ct=>{ const t = teoricas.find(x=>x.item_codigo===ct.item_codigo); return t ? { ...ct, teorica:t.teorica } : ct; }) : teoricas;
+    SelCartonState = { itemId, cartones: previas };
     selRenderCartonList();
   }
 }
 let SelCartonState = { itemId:null, cartones:[] };
+let SelModalCtx = null;
+// Si mientras la ventana de un sellado está abierta, otra selladora (u otro celular) sella parte de lo mismo,
+// el "por sellar" y las cajas teóricas se actualizan solos, sin cerrar la ventana.
+async function selRefrescarModalAbierto(){
+  const campo = document.getElementById('selPorSellar');
+  if(!campo || !SelModalCtx) return;
+  const it = selFindItem(SelModalCtx.tipo, SelModalCtx.itemId);
+  if(!it || (it.estado_timer==='detenido' && it.cantidad!=null)) return;
+  await selCargarPendientesSellado();
+  const nuevo = selPendienteActual(it);
+  const campoAhora = document.getElementById('selPorSellar');
+  if(nuevo == null || !campoAhora || String(nuevo) === campoAhora.dataset.valor) return;
+  campoAhora.value = fmtRaw(nuevo); campoAhora.dataset.valor = String(nuevo);
+  if(SelCartonState.itemId === SelModalCtx.itemId && it.cantidad == null){
+    const teoricas = cajasDeFormula(it.item_codigo, nuevo);
+    SelCartonState.cartones = (SelCartonState.cartones||[]).map(ct=>{
+      if(ct.cantidad != null) return ct; // las cajas cuya cantidad usada ya se anotó no se tocan
+      const t = teoricas.find(x=>x.item_codigo===ct.item_codigo); return t ? { ...ct, teorica:t.teorica } : ct; });
+    selRenderCartonList();
+  }
+  toast('Se selló en otra selladora: ahora quedan ' + fmtNum(nuevo) + ' por sellar');
+}
 function selRenderCartonList(){
   const wrap = document.getElementById('selCartonList');
   if(!wrap) return;
@@ -12117,28 +13267,52 @@ async function selAddResponsable(){
 async function saveSelItemModal(tipo, itemId){
   const it = selFindItem(tipo, itemId);
   if(!it) return;
+  const errPausas = (SelPausasEdit && SelPausasEdit.itemId===itemId) ? selPausasEditValidar() : null;
+  if(errPausas){ toast(errPausas); return; }
   it.lote = document.getElementById('selLote').value.trim();
   it.n_personas = parseFloat((document.getElementById('selPersonas').value||'0').replace(',','.')) || 0;
   const meta = SELLADO_ACTIVIDADES.find(a=>a.key===tipo);
-  it.n_selladoras = meta.esSellado ? (document.getElementById('selSelladoras').value.trim() || '1') : 'N/A';
+  const elSel = document.getElementById('selSelladoras');
+  it.n_selladoras = meta.esSellado ? ((elSel && !elSel.disabled) ? (elSel.value.trim() || selNumeroSelladora(meta)) : selNumeroSelladora(meta)) : 'N/A';
   it.observaciones = document.getElementById('selObs').value;
   it.responsable = document.getElementById('selResp').value;
   // Hora de inicio/fin manual (por si se olvidó presionar Iniciar/Detener en el momento)
   const hiManual = document.getElementById('selHoraInicioManual').value;
   const hfManual = document.getElementById('selHoraFinManual').value;
+  // Tiempo productivo: si NO se tocaron las horas ni las paradas, manda el cronómetro (con precisión de segundos).
+  // Si se cambió una hora o una parada, se recalcula: (fin − inicio) − las paradas que caen en ese rango.
+  const elHi = document.getElementById('selHoraInicioManual'), elHf = document.getElementById('selHoraFinManual');
+  const editoHoras = (hiManual !== (elHi.dataset.orig||'')) || (hfManual !== (elHf.dataset.orig||''));
+  const editoPausas = !!(SelPausasEdit && SelPausasEdit.itemId===itemId && selPausasEditHaCambiado());
+  const eraActivo = (it.estado_timer==='corriendo' || it.estado_timer==='pausado') && !it.hora_fin;
+  const yaDetenido = it.estado_timer==='detenido' && it.minutos_realizado!=null;
   if(hiManual){
-    it.hora_inicio = hmToISOToday(hiManual);
     if(hfManual){
-      it.hora_fin = hmToISOToday(hfManual);
-      // Si quedó una pausa abierta (se finaliza directo desde "en pausa"), se cierra
-      // con la misma hora de fin para que el cálculo de tiempo sea correcto.
+      const usaCronometro = !editoHoras && !editoPausas && (eraActivo || yaDetenido);
+      let iniIso, finIso, minutos = null;
+      if(!editoHoras && (eraActivo || yaDetenido)){
+        iniIso = it.hora_inicio;
+        finIso = eraActivo ? new Date().toISOString() : it.hora_fin;
+        if(usaCronometro) minutos = eraActivo
+          ? Math.max(0, selCalcMinutos({ ...it, hora_fin: finIso, estado_timer:'detenido', pausas:(it.pausas||[]).map(pp=>({ ...pp, fin: pp.fin || finIso })) }))
+          : it.minutos_realizado;
+      } else {
+        iniIso = hmToISOEnFecha(hiManual, it.hora_inicio);
+        finIso = hmToISOEnFecha(hfManual, it.hora_inicio);
+      }
+      if(editoPausas) selAplicarPausasEditadas(SelladoState.sesiones[tipo], it);
+      it.hora_inicio = iniIso;
+      it.hora_fin = finIso;
+      // Si quedó una pausa abierta (se finaliza directo desde "en pausa"), se cierra con la hora de fin
       const pausasAbiertas = it.pausas||[];
-      if(pausasAbiertas.length && !pausasAbiertas[pausasAbiertas.length-1].fin) pausasAbiertas[pausasAbiertas.length-1].fin = it.hora_fin;
+      if(pausasAbiertas.length && !pausasAbiertas[pausasAbiertas.length-1].fin) pausasAbiertas[pausasAbiertas.length-1].fin = finIso;
       it.pausas = pausasAbiertas;
       selRegistrarParadasCerradas(tipo, it);
-      it.minutos_realizado = Math.max(0, Math.round(selCalcMinutos(it)*100)/100);
+      if(minutos == null) minutos = selMinutosProductivosEnRango(it, iniIso, finIso);
+      it.minutos_realizado = Math.round(Math.max(0, minutos)*100)/100;
       it.estado_timer = 'detenido';
     } else {
+      it.hora_inicio = hmToISOEnFecha(hiManual, it.hora_inicio);
       it.hora_fin = null;
       it.minutos_realizado = null;
       it.estado_timer = 'corriendo';
@@ -12151,8 +13325,9 @@ async function saveSelItemModal(tipo, itemId){
     const metaActual = (cacheMetasSellado||[]).find(m=>m.item_codigo===it.item_codigo);
     it.meta_selladora = metaActual ? metaActual.meta_uh : 0;
     selRecalcKpi(it);
-    if(it.pendiente_al_iniciar!=null && cantVal!=null && cantVal > it.pendiente_al_iniciar + 0.001){
-      toast('Sellaste más de lo que estaba pendiente (' + fmtNum(it.pendiente_al_iniciar) + '). Se guardó igual; si la producción real fue mayor, corrígela en Ajuste → Reconteo.');
+    const pendRef = selPendienteActual(it);
+    if(pendRef!=null && cantVal!=null && cantVal > pendRef + 0.001){
+      toast('Sellaste más de lo que estaba pendiente (' + fmtNum(pendRef) + '). Se guardó igual; si la producción real fue mayor, corrígela en Ajuste → Reconteo.');
     }
   } else if(hiManual && hfManual){
     selRecalcKpi(it);
@@ -12357,12 +13532,14 @@ async function selRegVerificar(rowId, itemId){
     </div>
     <div class="field-row">
       <div class="field"><label>N° Personas</label><input type="text" inputmode="numeric" id="srPersonas" value="${it.n_personas!=null?it.n_personas:''}"></div>
-      <div class="field"><label>N° Selladoras</label><input type="text" id="srSelladoras" value="${escHtml(it.n_selladoras||'')}" ${meta.esSellado?'':'disabled'}></div>
+      <div class="field"><label>N° Selladoras</label><input type="text" id="srSelladoras" value="${escHtml(it.n_selladoras||'')}" ${(meta.esSellado && !permisoActual())?'disabled':(meta.esSellado?'':'disabled')}></div>
     </div>
     <div class="field-row">
-      <div class="field"><label>Hora de inicio</label><input type="time" id="srHoraInicio" value="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}"></div>
-      <div class="field"><label>Hora de fin</label><input type="time" id="srHoraFin" value="${it.hora_fin?new Date(it.hora_fin).toTimeString().slice(0,5):''}"></div>
+      <div class="field"><label>Hora de inicio</label><input type="time" id="srHoraInicio" data-orig="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}" value="${it.hora_inicio?new Date(it.hora_inicio).toTimeString().slice(0,5):''}" oninput="srActualizarResumen()"></div>
+      <div class="field"><label>Hora de fin</label><input type="time" id="srHoraFin" data-orig="${it.hora_fin?new Date(it.hora_fin).toTimeString().slice(0,5):''}" value="${it.hora_fin?new Date(it.hora_fin).toTimeString().slice(0,5):''}" oninput="srActualizarResumen()"></div>
     </div>
+    <div id="srResumenTiempo" style="background:#F0FDFA;border:1px solid #99F6E4;border-radius:8px;padding:10px 12px;margin-bottom:10px;"></div>
+    ${!it.es_parada ? `<div class="field"><label>Pausas del sellado (paradas que detuvieron el sellado)</label><div id="selPausasEditWrap"></div><div class="sub" style="margin-top:4px;">Si la parada se hizo al mismo tiempo que el sellado, no va aquí: va en “Registrar parada”.</div></div>` : ''}
     ${meta.esSellado && it.item_codigo!=='N/A' ? `
     <div class="field-row">
       <div class="field"><label>Meta por Selladora (u/h)</label><input type="text" value="${fmtRaw(metaUh)}" disabled></div>
@@ -12383,6 +13560,16 @@ async function selRegVerificar(rowId, itemId){
       <button class="btn primary" style="--accent:var(--materia)" onclick="selRegGuardarVerificacion('${rowId}','${itemId}')">Guardar corrección</button>
     </div>
   `);
+  SelRegCtx = { rowId, itemId };
+  if(!it.es_parada) selPausasEditInit(it, srActualizarResumen); else SelPausasEdit = null;
+  setTimeout(()=>{ selPausasEditPintar(); srActualizarResumen(); }, 0);
+}
+let SelRegCtx = null;
+function srActualizarResumen(){
+  if(!SelRegCtx) return;
+  const row = (SelRegState.rows||[]).find(r=>r.id===SelRegCtx.rowId); if(!row) return;
+  const it = (row.items||[]).find(i=>i.id===SelRegCtx.itemId);
+  selResumenTiempoGenerico(it, 'srHoraInicio', 'srHoraFin', 'srResumenTiempo');
 }
 async function selRegGuardarVerificacion(rowId, itemId){
   const row = (SelRegState.rows||[]).find(r=>r.id===rowId);
@@ -12398,9 +13585,23 @@ async function selRegGuardarVerificacion(rowId, itemId){
   it.responsable = document.getElementById('srResp').value;
   const hi = document.getElementById('srHoraInicio').value;
   const hf = document.getElementById('srHoraFin').value;
-  it.hora_inicio = hi ? hmToISOToday(hi) : null;
-  it.hora_fin = hf ? hmToISOToday(hf) : null;
-  if(hi && hf) it.minutos_realizado = Math.max(0, Math.round(((new Date(it.hora_fin)-new Date(it.hora_inicio))/60000)*100)/100);
+  const errPausas = (SelPausasEdit && SelPausasEdit.itemId===itemId) ? selPausasEditValidar() : null;
+  if(errPausas){ toast(errPausas); return; }
+  const editoHoras = (hi !== (document.getElementById('srHoraInicio').dataset.orig||'')) || (hf !== (document.getElementById('srHoraFin').dataset.orig||''));
+  const editoPausas = !!(SelPausasEdit && SelPausasEdit.itemId===itemId && selPausasEditHaCambiado());
+  const refFecha = it.hora_inicio;
+  if(editoPausas) selAplicarPausasEditadas(row, it);
+  if(editoHoras){
+    it.hora_inicio = hi ? hmToISOEnFecha(hi, refFecha) : null;
+    it.hora_fin = hf ? hmToISOEnFecha(hf, refFecha) : null;
+  }
+  // Se cierran las pausas abiertas y se crean los registros de las paradas nuevas
+  if(it.hora_fin){ (it.pausas||[]).forEach(pp=>{ if(!pp.fin) pp.fin = it.hora_fin; }); }
+  selRegistrarParadasCerradasEnFila(row, it);
+  // Minutos productivos: (fin − inicio) − paradas. Si no se tocó nada se conservan los del cronómetro.
+  if(it.hora_inicio && it.hora_fin && (editoHoras || editoPausas || it.minutos_realizado==null)){
+    it.minutos_realizado = Math.round(selMinutosProductivosEnRango(it, it.hora_inicio, it.hora_fin)*100)/100;
+  }
   const cantEl = document.getElementById('srCantidad');
   if(cantEl){
     it.cantidad = cantEl.value!=='' ? parseFloat(cantEl.value.replace(',','.')) : null;
@@ -12557,7 +13758,7 @@ async function bodRenderRecepcion(){
       </div>
       <div class="field">
         <label>Fecha de ingreso</label>
-        <input type="date" value="${escHtml(d.fecha)}" onchange="bodSetField('fecha',this.value)">
+        <input type="date" value="${escHtml(d.fecha)}" oninput="bodSetField('fecha',this.value)" onchange="bodSetField('fecha',this.value)">
       </div>
       <div class="field">
         <label>Tipo de recepción</label>
@@ -12566,13 +13767,13 @@ async function bodRenderRecepcion(){
             <button class="chip-toggle ${d.tipo_recepcion===t.key?'active':''}" type="button" onclick="bodPickTipoRecepcion('${t.key}')">${escHtml(t.label)}</button>`).join('')}
         </div>
         <div class="inline-add" style="margin-top:8px;">
-          <input type="text" id="bodOtroTipo" placeholder="OTRO: escribe la categoría…" value="${escHtml(d.tipo_recepcion==='OTRO'?d.tipo_recepcion_otro:'')}" onchange="bodSetOtroTipo(this.value)">
+          <input type="text" id="bodOtroTipo" placeholder="OTRO: escribe la categoría…" value="${escHtml(d.tipo_recepcion==='OTRO'?d.tipo_recepcion_otro:'')}" oninput="BodState.draft.tipo_recepcion_otro=this.value" onchange="bodSetOtroTipo(this.value)">
         </div>
       </div>
 
       <div class="field">
         <label>Proveedor</label>
-        <input type="text" id="bodProveedor" list="bodProveedoresList" value="${escHtml(d.proveedor)}" placeholder="Escribe o selecciona…" onchange="bodPickProveedor(this.value)">
+        <input type="text" id="bodProveedor" list="bodProveedoresList" value="${escHtml(d.proveedor)}" placeholder="Escribe o selecciona…" oninput="BodState.draft.proveedor=this.value" onchange="bodPickProveedor(this.value)">
         <datalist id="bodProveedoresList">
           ${(cacheBodProveedores||[]).map(p=>`<option value="${escHtml(p.nombre)}">`).join('')}
         </datalist>
@@ -12581,13 +13782,13 @@ async function bodRenderRecepcion(){
       <div class="field-row">
         <div class="field"><label>Hora de llegada</label>
           <div style="display:flex;gap:8px;">
-            <input type="time" id="bodHoraLlegada" value="${d.hora_llegada||''}" style="flex:1;" onchange="bodSetField('hora_llegada',this.value)">
+            <input type="time" id="bodHoraLlegada" value="${d.hora_llegada||''}" style="flex:1;" oninput="bodSetField('hora_llegada',this.value)" onchange="bodSetField('hora_llegada',this.value)">
             <button class="btn ghost" type="button" onclick="bodMarcarHora('hora_llegada')">Ahora</button>
           </div>
         </div>
         <div class="field"><label>Hora de salida</label>
           <div style="display:flex;gap:8px;">
-            <input type="time" id="bodHoraSalida" value="${d.hora_salida||''}" style="flex:1;" onchange="bodSetField('hora_salida',this.value)">
+            <input type="time" id="bodHoraSalida" value="${d.hora_salida||''}" style="flex:1;" oninput="bodSetField('hora_salida',this.value)" onchange="bodSetField('hora_salida',this.value)">
             <button class="btn ghost" type="button" onclick="bodMarcarHora('hora_salida')">Ahora</button>
           </div>
         </div>
@@ -12595,7 +13796,7 @@ async function bodRenderRecepcion(){
 
       <div class="field-row">
         <div class="field"><label>Factura</label>
-          <input type="text" placeholder="Ej: 15256-00002-33455" value="${escHtml(d.factura)}" onchange="bodSetField('factura',this.value)">
+          <input type="text" placeholder="Ej: 15256-00002-33455" value="${escHtml(d.factura)}" oninput="bodSetField('factura',this.value)" onchange="bodSetField('factura',this.value)">
         </div>
         <div class="field"><label>Evidencia de factura</label>
           ${bodFileInputHtml('factura_archivo')}
@@ -12603,7 +13804,7 @@ async function bodRenderRecepcion(){
       </div>
       <div class="field-row">
         <div class="field"><label>Guía de remisión (opcional)</label>
-          <input type="text" value="${escHtml(d.guia_remision)}" onchange="bodSetField('guia_remision',this.value)">
+          <input type="text" value="${escHtml(d.guia_remision)}" oninput="bodSetField('guia_remision',this.value)" onchange="bodSetField('guia_remision',this.value)">
         </div>
         <div class="field"><label>Evidencia de guía</label>
           ${bodFileInputHtml('guia_remision_archivo')}
@@ -12622,20 +13823,20 @@ async function bodRenderRecepcion(){
       <div class="section-title">Inspección general del transporte</div>
       <div class="field-row">
         <div class="field"><label>RUC / Razón Social</label>
-          <input type="text" value="${escHtml(d.ruc)}" placeholder="Se autocompleta según el proveedor" onchange="bodSetRuc(this.value)">
+          <input type="text" value="${escHtml(d.ruc)}" placeholder="Se autocompleta según el proveedor" oninput="BodState.draft.ruc=this.value" onchange="bodSetRuc(this.value)">
         </div>
         <div class="field"><label>Placa de transporte</label>
-          <input type="text" list="bodPlacasList" value="${escHtml(d.placa)}" onchange="bodSetField('placa',this.value)">
+          <input type="text" list="bodPlacasList" value="${escHtml(d.placa)}" oninput="bodSetField('placa',this.value)" onchange="bodSetField('placa',this.value)">
           <datalist id="bodPlacasList">${(cacheBodPlacas||[]).map(p=>`<option value="${escHtml(p.nombre)}">`).join('')}</datalist>
         </div>
       </div>
       <div class="field-row">
         <div class="field"><label>Conductor</label>
-          <input type="text" id="bodConductor" list="bodConductoresList" value="${escHtml(d.conductor)}" onchange="bodPickConductor(this.value)">
+          <input type="text" id="bodConductor" list="bodConductoresList" value="${escHtml(d.conductor)}" oninput="BodState.draft.conductor=this.value" onchange="bodPickConductor(this.value)">
           <datalist id="bodConductoresList">${(cacheBodConductores||[]).map(c=>`<option value="${escHtml(c.nombre)}">`).join('')}</datalist>
         </div>
         <div class="field"><label>Cédula</label>
-          <input type="text" value="${escHtml(d.cedula_conductor)}" onchange="bodSetCedula(this.value)">
+          <input type="text" value="${escHtml(d.cedula_conductor)}" oninput="BodState.draft.cedula_conductor=this.value" onchange="bodSetCedula(this.value)">
         </div>
       </div>
       <div class="field">
@@ -12657,12 +13858,12 @@ async function bodRenderRecepcion(){
 
       <div class="field">
         <label>Observaciones</label>
-        <textarea id="bodObs" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;" onchange="bodSetField('observaciones',this.value)">${escHtml(d.observaciones)}</textarea>
+        <textarea id="bodObs" rows="3" style="width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:8px;font-family:inherit;font-size:14px;" oninput="bodSetField('observaciones',this.value)" onchange="bodSetField('observaciones',this.value)">${escHtml(d.observaciones)}</textarea>
       </div>
 
       <div class="section-title">Firmas de conformidad</div>
       <div class="field"><label>Supervisor de calidad</label>
-        <select id="bodRespCal" onchange="bodSetField('responsable_calidad', this.value)">
+        <select id="bodRespCal" oninput="bodSetField('responsable_calidad',this.value)" onchange="bodSetField('responsable_calidad',this.value)">
           <option value="">Selecciona…</option>
           ${(cacheCatalogosPlan||[]).filter(c=>c.tipo==='responsable_calidad').map(c=>`<option value="${escHtml(c.nombre)}" ${d.responsable_calidad===c.nombre?'selected':''}>${escHtml(c.nombre)}</option>`).join('')}
         </select>
@@ -12911,10 +14112,10 @@ function bodOpenItemDetalle(itemId){
     <div class="mhead"><span class="sup">${escHtml(it.item_codigo)}</span><h3>${escHtml(it.item_nombre)}</h3><div class="msub">Recepción de materia prima</div></div>
     <div class="sec azul"><div class="sec-h">Cantidad y lote</div><div class="sec-b">
     <div class="field-row">
-      <div class="field"><label>Cantidad</label><input type="text" inputmode="decimal" id="biCantidad" value="${fmtRaw(it.cantidad)}"></div>
+      <div class="field"><label>Cantidad</label><input type="text" inputmode="decimal" id="biCantidad" value="${fmtRaw(it.cantidad)}" oninput="bodItemSync('${itemId}')"></div>
       <div class="field"><label>Medida</label><input type="text" value="${escHtml(it.medida)}" disabled></div>
     </div>
-    <div class="field"><label>Lote</label><input type="text" id="biLote" value="${escHtml(it.lote||'')}" ${sinLote?'disabled':''}></div>
+    <div class="field"><label>Lote</label><input type="text" id="biLote" value="${escHtml(it.lote||'')}" ${sinLote?'disabled':''} oninput="bodItemSync('${itemId}')"></div>
     </div></div>
     <div class="sec turquesa"><div class="sec-h">Fechas y vida útil</div><div class="sec-b">
     <div class="field-row">
@@ -12927,14 +14128,14 @@ function bodOpenItemDetalle(itemId){
     <div class="sec morado"><div class="sec-h">Control de calidad del ítem</div><div class="sec-b">
     <div class="sub" style="margin-bottom:10px;">Selecciona si cumple; si no se selecciona, se entiende que no cumple.</div>
     <div class="field-row" style="align-items:center;margin-bottom:10px;">
-      <button class="chip-toggle ${it.temperatura_cumple?'active':''}" type="button" style="flex:0 0 auto;" onclick="bodToggleItemCheck('${itemId}','temperatura_cumple')">Temperatura</button>
-      <input type="text" inputmode="decimal" id="biTemp" placeholder="°C" value="${it.temperatura!=null?fmtRaw(it.temperatura):''}" style="flex:1;">
+      <button class="chip-toggle ${it.temperatura_cumple?'active':''}" type="button" style="flex:0 0 auto;" data-chk="temperatura_cumple" onclick="bodToggleItemCheck('${itemId}','temperatura_cumple')">Temperatura</button>
+      <input type="text" inputmode="decimal" id="biTemp" placeholder="°C" value="${it.temperatura!=null?fmtRaw(it.temperatura):''}" style="flex:1;" oninput="bodItemSync('${itemId}')">
     </div>
     <div class="chip-grid" style="margin-bottom:14px;">
-      <button class="chip-toggle ${it.color_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','color_cumple')">Color</button>
-      <button class="chip-toggle ${it.olor_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','olor_cumple')">Olor</button>
-      <button class="chip-toggle ${it.apariencia_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','apariencia_cumple')">Apariencia</button>
-      <button class="chip-toggle ${it.integridad_cumple?'active':''}" type="button" onclick="bodToggleItemCheck('${itemId}','integridad_cumple')">Integridad de empaque</button>
+      <button class="chip-toggle ${it.color_cumple?'active':''}" type="button" data-chk="color_cumple" onclick="bodToggleItemCheck('${itemId}','color_cumple')">Color</button>
+      <button class="chip-toggle ${it.olor_cumple?'active':''}" type="button" data-chk="olor_cumple" onclick="bodToggleItemCheck('${itemId}','olor_cumple')">Olor</button>
+      <button class="chip-toggle ${it.apariencia_cumple?'active':''}" type="button" data-chk="apariencia_cumple" onclick="bodToggleItemCheck('${itemId}','apariencia_cumple')">Apariencia</button>
+      <button class="chip-toggle ${it.integridad_cumple?'active':''}" type="button" data-chk="integridad_cumple" onclick="bodToggleItemCheck('${itemId}','integridad_cumple')">Integridad de empaque</button>
     </div>
     </div></div>
 
@@ -12944,20 +14145,29 @@ function bodOpenItemDetalle(itemId){
     </div>
   `);
 }
+// Copia a la recepción lo que haya escrito en la ventana del ítem (así nada se pierde aunque algo se vuelva a dibujar)
+function bodItemSync(itemId){
+  const it = (BodState.draft.items||[]).find(i=>i.id===itemId);
+  if(!it) return;
+  const v = id => { const el = document.getElementById(id); return el ? el.value : null; };
+  if(v('biCantidad')!==null) it.cantidad = parseFloat((v('biCantidad')||'0').replace(',','.')) || 0;
+  if(v('biLote')!==null) it.lote = (v('biLote')||'').trim();
+  if(v('biFechaElab')!==null) it.fecha_elaboracion = v('biFechaElab') || null;
+  if(v('biFechaExp')!==null) it.fecha_expiracion = v('biFechaExp') || null;
+  if(v('biTemp')!==null) it.temperatura = v('biTemp')!=='' ? parseFloat((v('biTemp')||'').replace(',','.')) : null;
+}
+// Marca/desmarca solo el botón: antes se reconstruía la ventana abriendo OTRA encima, y al guardar
+// aparecía la anterior con menos opciones marcadas (como "retrocediendo") y se perdían las fechas.
 function bodToggleItemCheck(itemId, field){
   const it = (BodState.draft.items||[]).find(i=>i.id===itemId);
   if(!it) return;
-  // Preservamos lo que el usuario ya escribió antes de reconstruir el modal
-  const cantEl = document.getElementById('biCantidad');
-  const loteEl = document.getElementById('biLote');
-  const tempEl = document.getElementById('biTemp');
-  if(cantEl) it.cantidad = parseFloat((cantEl.value||'0').replace(',','.')) || 0;
-  if(loteEl) it.lote = loteEl.value.trim();
-  if(tempEl) it.temperatura = tempEl.value!=='' ? parseFloat(tempEl.value.replace(',','.')) : null;
+  bodItemSync(itemId);
   it[field] = !it[field];
-  bodOpenItemDetalle(itemId);
+  const btn = document.querySelector('#modalPanel [data-chk="'+field+'"]');
+  if(btn) btn.classList.toggle('active', !!it[field]);
 }
 function bodItemFechaChange(itemId){
+  bodItemSync(itemId);
   const elab = document.getElementById('biFechaElab').value;
   const exp = document.getElementById('biFechaExp').value;
   const vidaUtil = bodCalcVidaUtil(elab, exp);
