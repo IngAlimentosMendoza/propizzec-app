@@ -724,7 +724,7 @@ main#app{max-width:900px;margin:0 auto;padding:18px 16px 60px;}
     <button class="side-item" data-mod="configuracion" onclick="goModule('configuracion')"><span class="ic">⚙️</span> Configuración</button>
     <div class="side-foot">
       <button class="btn danger" style="width:100%;" onclick="logout()">Cerrar sesión</button>
-      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.07-11</div>
+      <div class="sub" style="text-align:center;margin-top:8px;opacity:.55;" id="appVersionTag">v2026.10.07-17</div>
     </div>
   </nav>
 
@@ -2725,7 +2725,8 @@ const TABLAS_SINCRONIZADAS = [
   'personal_planificacion','sellado_config_actividades','despacho_destinos',
   'bodega_proveedores','bodega_conductores','config_horarios','usuarios_area',
   'items','formulacion','medidas','tipos_item',
-  'etiquetado_ordenes','etiquetado_bajas','etiquetado_devoluciones'
+  'etiquetado_ordenes','etiquetado_bajas','etiquetado_devoluciones',
+  'sellado_devoluciones'
 ];
 let canalSincronizacion = null;
 let sincTimer = null;
@@ -2880,7 +2881,12 @@ const REFRESCO_GRANULAR_POR_TABLA = {
     return true;
   },
   cuarentena_lotes: ()=>{
+    if(currentModule==='sellado' && SelTabState && SelTabState.tab==='devoluciones'){ selDevRefrescar(); } // el estado en Calidad / el bloqueo cambia
     if(currentModule==='calidad' && CalState && CalState.tab==='cuarentena'){ renderCalCuarentenaTab(); return true; }
+    return true;
+  },
+  sellado_devoluciones: ()=>{
+    if(currentModule==='sellado' && SelTabState && SelTabState.tab==='devoluciones'){ selDevRefrescar(); }
     return true;
   },
   bodega_registros: ()=>{
@@ -3471,11 +3477,12 @@ function openModal(html, onClose){
     panel.querySelectorAll('select').forEach(sel=>{
       Array.from(sel.options).forEach(opt=>{ opt.toggleAttribute('selected', opt.value===sel.value); });
     });
-    modalStack.push({ html: panel.innerHTML, hook: currentModalHook });
+    modalStack.push({ html: panel.innerHTML, hook: currentModalHook, scroll: panel.scrollTop }); // + dónde estaba desplazada, para volver al mismo punto
   }
   currentModalHook = onClose || null;
   document.getElementById('modalPanel').setAttribute('data-mod', currentModule || '');
   document.getElementById('modalPanel').innerHTML = `<button class="mclose" onclick="closeModal()">✕</button>${html}`;
+  document.getElementById('modalPanel').scrollTop = 0; // una ventana nueva siempre empieza arriba
   bg.classList.add('show');
   // Cada ventana que se abre (incluidas las anidadas) queda registrada como
   // un paso en el historial del navegador, para que el botón físico/gesto de
@@ -3496,7 +3503,11 @@ function closeModal(desdeBackFisico){
   } else if(modalStack.length){
     const prev = modalStack.pop();
     currentModalHook = prev.hook;
-    document.getElementById('modalPanel').innerHTML = prev.html;
+    const panelPrev = document.getElementById('modalPanel');
+    panelPrev.innerHTML = prev.html;
+    const yPrev = prev.scroll || 0; // la ventana anterior vuelve al mismo punto donde estabas, no arriba
+    panelPrev.scrollTop = yPrev;
+    requestAnimationFrame(()=>{ panelPrev.scrollTop = yPrev; });
   } else {
     document.getElementById('modalBg').classList.remove('show');
     document.getElementById('modalPanel').innerHTML = '';
@@ -3776,12 +3787,28 @@ function invRenderBody(){
 /* ============================================================
    KARDEX
    ============================================================ */
+// Qué ve cada área en el Kardex:
+//  · Acondicionamiento 1, 2, 3 y Masa → solo productos terminados (PT) y las materias primas (MP) que aparecen en la fórmula de algún PT
+//  · Sellado → solo materiales de empaque (ME)
+//  · el resto de las áreas ve todo
+const KARDEX_AREAS_PRODUCCION = ['ACONDICIONAMIENTO 1','ACONDICIONAMIENTO 2','ACONDICIONAMIENTO 3','MASA'];
+function kardexFiltroPorArea(){
+  if(currentArea === 'SELLADO') return r => r.tipo === 'MATERIAL_EMPAQUE';
+  if(KARDEX_AREAS_PRODUCCION.includes(currentArea)){
+    const pts = new Set((cacheStock||[]).filter(r=>r.tipo==='PRODUCTO_VENTA').map(r=>r.codigo));
+    const mps = new Set((cacheFormulacion||[]).filter(f=>pts.has(f.cod_producto_principal)).map(f=>f.cod_componente));
+    return r => r.tipo === 'PRODUCTO_VENTA' || ((r.tipo === 'MATERIA_PRIMA' || r.tipo === 'MP') && mps.has(r.codigo));
+  }
+  return null;
+}
 function renderKardexTab(){
   const body = document.getElementById('invBody');
   if(!body) return; // el módulo ya cambió de pantalla mientras cargaban los datos
   const soloLectura = !!(permisoActual() && permisoActual().soloKardex);
   const q = InvState.searchKardex.trim().toUpperCase();
   let rows = (cacheStock||[]).filter(r=>r.activo!==false);
+  const visibleEnArea = kardexFiltroPorArea();
+  if(visibleEnArea) rows = rows.filter(visibleEnArea);
   if(q) rows = rows.filter(r=> (r.codigo||'').toUpperCase().includes(q) || (r.nombre||'').toUpperCase().includes(q));
   rows.sort((a,b)=>(a.codigo||'').localeCompare(b.codigo||''));
 
@@ -4117,7 +4144,7 @@ function renderAjustesList(){
   list.innerHTML = rows.map(r=>{
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
     const delta = Number(r.entra||0) - Number(r.sale||0);
-    const motivo = (r.comprobante||'').replace(/^Ajuste N°\s*\d+:\s*/i, '');
+    const motivo = (r.comprobante||'').replace(/^Ajuste N°\s*\S+:\s*/i, '');
     return `<div class="reg-row">
       <div class="rmain"><span class="sup">${escHtml(r.item_codigo)} · Lote ${escHtml(r.lote||'')} · ${ddMMyy(r.fecha)}</span><span class="big">${escHtml(item?item.nombre:r.item_codigo)}</span><span class="sub">${escHtml(motivo)}</span></div>
       <div class="rval"><span class="sup">AJUSTE</span><span class="big" style="color:${delta>=0?'var(--ok)':'var(--danger)'};">${delta>0?'+':''}${fmtNum(delta)}</span></div>
@@ -5203,9 +5230,19 @@ async function crFinalizarOrden(row){
     toast('Faltan datos por completar: ' + faltan.join(' · '));
     return;
   }
-  const { error } = await sb.from('cronograma').update({ finalizado: true, estado_verificacion:'pendiente' }).eq('id', id);
+  // La cantidad real viene precargada con la teórica y solo se guardaba si se cambiaba. Al finalizar se guarda la que se ve
+  // en la ficha (la escrita o, si no se tocó, la teórica), para que el registro y el Excel nunca queden con la real vacía.
+  const parche = { finalizado: true, estado_verificacion:'pendiente' };
+  if(row.cantidad_real == null){
+    const el = document.getElementById('pfCantidad');
+    const escrita = el ? parseFloat(String(el.value||'').replace(',','.')) : NaN;
+    const valor = !isNaN(escrita) ? escrita : Number(row.cantidad_programada);
+    if(!isNaN(valor)) parche.cantidad_real = valor;
+  }
+  const { error } = await sb.from('cronograma').update(parche).eq('id', id);
   if(error){ toast('Error: ' + error.message); return; }
   row.finalizado = true; row.estado_verificacion = 'pendiente';
+  if(parche.cantidad_real != null) row.cantidad_real = parche.cantidad_real;
   toast('Producción finalizada — queda lista para verificar en Monitoreo');
   closeModal();
   await planLoad(true);
@@ -6499,7 +6536,7 @@ function regExportExcel(){
     const item = (cacheItems||[]).find(i=>i.codigo===r.item_codigo);
     const base = [
       r.fecha||'', r.orden_produccion||'', r.area||'', r.item_codigo||'', item?item.nombre:'', r.lote||'',
-      r.cantidad_programada!=null?r.cantidad_programada:'', r.cantidad_real!=null?r.cantidad_real:'',
+      r.cantidad_programada!=null?r.cantidad_programada:'', r.cantidad_real!=null?r.cantidad_real:(r.finalizado && r.cantidad_programada!=null ? r.cantidad_programada : ''),
       r.merma_proceso||0, r.merma_medida||'', r.motivo_merma||'',
       r.unid_rechazadas_calidad||0, r.unid_reprocesadas||0,
       r.hora_inicio||'', r.hora_fin||'', r.responsable||'', r.observaciones||''
@@ -6902,6 +6939,24 @@ function etiqComprimirImagen(file, maxLado, calidad){
     img.onerror = ()=>{ URL.revokeObjectURL(url); reject(new Error('No se pudo leer la imagen')); };
     img.src = url;
   });
+}
+// Facturas, guías de remisión y certificados: se suben a Storage (carpeta "facturas") y la tabla guarda solo el enlace.
+// Las imágenes se reducen antes de subir (máx. 2000 px); los PDF se suben tal cual. Si Storage no responde, devuelve null
+// y quien llama guarda el archivo dentro de la tabla como antes.
+const ARCHIVO_CAMPO_URL = { factura_archivo:'factura_url', guia_remision_archivo:'guia_remision_url', certificado_calidad_archivo:'certificado_calidad_url' };
+function archivoEsPdf(src){ return String(src||'').startsWith('data:application/pdf') || /\.pdf(\?|$)/i.test(String(src||'')); }
+async function archivoSubirAFacturas(file, carpeta){
+  try{
+    let blob = file, tipo = file.type, ext = 'pdf';
+    if(file.type !== 'application/pdf'){
+      const r = await etiqComprimirImagen(file, 2000, 0.8); blob = r.blob; tipo = 'image/jpeg'; ext = 'jpg';
+    }
+    const ruta = carpeta + '/' + Date.now() + '_' + Math.random().toString(36).slice(2,7) + '.' + ext;
+    const { error } = await sb.storage.from('facturas').upload(ruta, blob, { contentType: tipo, upsert:false });
+    if(error) return null;
+    const { data } = sb.storage.from('facturas').getPublicUrl(ruta);
+    return (data && data.publicUrl) || null;
+  }catch(e){ return null; }
 }
 // Sube la foto a Storage (carpeta "evidencias") y devuelve su enlace público
 async function etiqSubirEvidencia(cronogramaId, blob){
@@ -8775,7 +8830,6 @@ async function entRenderRegistrosTab(){
         <input type="text" id="entRegSearch" placeholder="Buscar por cliente, N° de OC o producto…" value="${escHtml(EntRegState.q)}">
       </div>
       <button class="btn" onclick="entExportarExcel()">⬇ Excel detallado</button>
-      <button class="btn" onclick="entExportarExcelPorCliente(entRegistrosFiltrados(), 'Entregas_por_cliente_'+EntRegState.desde+'_a_'+EntRegState.hasta)">⬇ Excel por cliente</button>
       <button class="btn" onclick="entAbrirCargaMasiva()">📎 Cargar varios documentos</button>
     </div>
     <div class="list-meta" id="entRegMeta">Cargando…</div>
@@ -11622,6 +11676,7 @@ async function renderSellado(){
       <button class="tabbtn ${SelTabState.tab==='actividades'?'active':''}" data-tab="actividades" onclick="selGoTab('actividades')">Actividades</button>
       <button class="tabbtn ${SelTabState.tab==='controldespacho'?'active':''}" data-tab="controldespacho" onclick="selGoTab('controldespacho')">Control de despacho</button>
       <button class="tabbtn ${SelTabState.tab==='ajuste'?'active':''}" data-tab="ajuste" onclick="selGoTab('ajuste')">Ajuste</button>
+      <button class="tabbtn ${SelTabState.tab==='devoluciones'?'active':''}" data-tab="devoluciones" onclick="selGoTab('devoluciones')">Devoluciones</button>
       <button class="tabbtn ${SelTabState.tab==='registros'?'active':''}" data-tab="registros" onclick="selGoTab('registros')">Registros</button>
     </div>
     <div id="selRoot"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
@@ -11651,8 +11706,299 @@ function selRenderRootBody(){
   if(SelTabState.tab === 'controldespacho') return selRenderControlDespacho();
   if(SelTabState.tab === 'registros') return renderSelladoRegistrosTab();
   if(SelTabState.tab === 'ajuste') return renderSelladoAjusteTab();
+  if(SelTabState.tab === 'devoluciones') return selRenderDevoluciones();
   return selRenderActividades();
 }
+/* ================= Sellado · Devoluciones de producto despachado ================= */
+// Cada devolución: se asigna DEV00001…, entra al Kardex como "Ajuste N° DEVxxxxx: Devolución" y queda en Calidad → Cuarentena
+// (bloqueada hasta que Calidad la apruebe, la descarte o la elimine). Mientras exista su registro de cuarentena, Sellado no la puede editar.
+const SelDevState = { q:'', desde: entSumarDias(todayISO(), -30), hasta: todayISO(), rows:null, cuar:{} };
+let SelDevModal = null;
+const selDevFecha = f => f ? String(f).split('-').reverse().join('/') : '';
+const selDevNum = v => { const n = parseFloat(String(v==null?'':v).replace(',','.')); return isNaN(n) ? NaN : n; };
+const selDevComprobante = codigo => 'Ajuste N° ' + codigo + ': Devolución';
+const selDevClave = (cod, lote) => normalizaNombre(cod) + '|' + normalizaNombre(lote||'');
+
+async function selRenderDevoluciones(){
+  const root = document.getElementById('selRoot'); if(!root) return;
+  root.innerHTML = `
+    <div class="list-toolbar">
+      <div class="search-wrap"><span class="sic">🔎</span>
+        <input type="text" id="sdSearch" placeholder="Buscar por código DEV, cliente, factura, destino o producto…" value="${escHtml(SelDevState.q)}">
+      </div>
+    </div>
+    <div class="field-row" style="margin-bottom:6px;align-items:flex-end;">
+      <div class="field"><label>Desde</label><input type="date" id="sdDesde" value="${escHtml(SelDevState.desde)}"></div>
+      <div class="field"><label>Hasta</label><input type="date" id="sdHasta" value="${escHtml(SelDevState.hasta)}"></div>
+      <div class="field"><button class="btn" style="width:100%;" onclick="selDevExportExcel()">⬇ Excel</button></div>
+    </div>
+    <button class="btn primary" style="width:100%;margin-bottom:8px;--accent:var(--paradas);" onclick="selDevAbrirModal('nuevo')">Ingresar devolución</button>
+    <div class="list-meta" id="sdMeta">Cargando…</div>
+    <div class="reg-list" id="sdList"></div>`;
+  document.getElementById('sdSearch').addEventListener('input', e=>{ SelDevState.q = e.target.value; selDevRenderList(); });
+  document.getElementById('sdDesde').addEventListener('change', e=>{ SelDevState.desde = e.target.value; selDevRefrescar(); });
+  document.getElementById('sdHasta').addEventListener('change', e=>{ SelDevState.hasta = e.target.value; selDevRefrescar(); });
+  await selDevRefrescar();
+}
+async function selDevRefrescar(){ await selDevLoad(); selDevRenderList(); }
+async function selDevLoad(){
+  let q = sb.from('sellado_devoluciones').select('*').order('fecha', { ascending:false }).order('created_at', { ascending:false }).limit(500);
+  if(SelDevState.desde) q = q.gte('fecha', SelDevState.desde);
+  if(SelDevState.hasta) q = q.lte('fecha', SelDevState.hasta);
+  const { data, error } = await q;
+  SelDevState.rows = error ? [] : (data||[]);
+  SelDevState.cuar = {};
+  const codigos = SelDevState.rows.map(r=>r.codigo);
+  if(codigos.length){
+    const { data: cu } = await sb.from('cuarentena_lotes').select('id, origen_ref, estado').in('origen_ref', codigos);
+    (cu||[]).forEach(c=>{ (SelDevState.cuar[c.origen_ref] = SelDevState.cuar[c.origen_ref] || []).push(c); });
+  }
+}
+// Estado en Calidad: mientras exista su registro de cuarentena (aunque ya esté aprobado o descartado) la devolución queda bloqueada
+function selDevEstado(r){
+  const cu = SelDevState.cuar[r.codigo] || [];
+  if(!cu.length) return { bloqueada:false, texto:'✏️ Editable (Calidad eliminó la cuarentena)', color:'#64748B' };
+  const est = cu.map(c=>c.estado);
+  if(est.includes('en_cuarentena')) return { bloqueada:true, texto:'🔒 En cuarentena (Calidad)', color:'#B45309' };
+  if(est.every(e=>e==='aprobado')) return { bloqueada:true, texto:'🔒 Aprobada por Calidad', color:'#047857' };
+  if(est.every(e=>e==='descartado')) return { bloqueada:true, texto:'🔒 Dada de baja por Calidad', color:'#B91C1C' };
+  return { bloqueada:true, texto:'🔒 Resuelta por Calidad', color:'#475569' };
+}
+function selDevFiltradas(){
+  const q = (SelDevState.q||'').trim().toUpperCase();
+  let rows = (SelDevState.rows||[]).slice();
+  if(q) rows = rows.filter(r=>
+    [r.codigo, r.cliente, r.factura, r.destino, r.placa, String(r.numero_despacho||'')].some(x=>String(x||'').toUpperCase().includes(q)) ||
+    (r.items||[]).some(it=>((it.item_codigo||'')+' '+(it.item_nombre||'')+' '+(it.lote||'')).toUpperCase().includes(q)));
+  return rows;
+}
+function selDevRenderList(){
+  const list = document.getElementById('sdList'), meta = document.getElementById('sdMeta');
+  if(!list || !meta) return;
+  const rows = selDevFiltradas();
+  meta.textContent = rows.length + ' devolución(es)';
+  if(!rows.length){ list.innerHTML = '<div class="empty-state">No hay devoluciones en este rango.</div>'; return; }
+  list.innerHTML = rows.map(r=>{
+    const e = selDevEstado(r);
+    const prods = (r.items||[]).map(it=>escHtml((it.item_nombre||it.item_codigo)+' · Lote '+(it.lote||'—')+' · devuelto '+fmtNum(it.cantidad_devuelta))).join('<br>');
+    return `<div class="reg-row" style="cursor:pointer;display:block;" onclick="selDevAbrir('${r.id}')">
+      <div style="display:flex;justify-content:space-between;gap:8px;"><b>${escHtml(r.codigo)}</b><span style="color:var(--muted);font-size:12px;">${selDevFecha(r.fecha)}</span></div>
+      <div style="font-size:13px;margin:2px 0;">${escHtml(r.cliente||'—')} · Factura ${escHtml(r.factura||'—')} · ${escHtml(r.destino||'—')}</div>
+      <div style="font-size:12px;color:var(--muted);">${prods}</div>
+      <div style="font-size:12px;font-weight:700;margin-top:4px;color:${e.color};">${e.texto}</div>
+    </div>`;
+  }).join('');
+}
+function selDevExportExcel(){
+  const rows = selDevFiltradas();
+  if(!rows.length){ toast('No hay devoluciones para exportar'); return; }
+  const aoa = [['Código','Fecha','N° Despacho','Destino','Cliente','Factura','Placa','Código producto','Producto','Lote','Cant. despachada','Cant. devuelta','Medida','Estado en Calidad']];
+  rows.forEach(r=>{
+    const est = selDevEstado(r).texto.replace(/^[^A-Za-zÁÉÍÓÚáéíóú]+/, '');
+    (r.items||[]).forEach(it=>{
+      aoa.push([r.codigo, r.fecha||'', r.numero_despacho||'', r.destino||'', r.cliente||'', r.factura||'', r.placa||'', it.item_codigo||'', it.item_nombre||'', it.lote||'',
+        it.cantidad_despachada!=null?it.cantidad_despachada:'', it.cantidad_devuelta!=null?it.cantidad_devuelta:'', it.medida||'', est]);
+    });
+  });
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = aoa[0].map(()=>({wch:18}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Devoluciones');
+  XLSX.writeFile(wb, 'Devoluciones_Sellado_' + (SelDevState.desde||'') + '_a_' + (SelDevState.hasta||'') + '.xlsx');
+  toast('Excel exportado');
+}
+async function selDevSiguienteCodigo(){
+  let maxN = 0;
+  try{
+    const { data } = await sb.from('sellado_devoluciones').select('codigo').ilike('codigo', 'DEV%');
+    (data||[]).forEach(r=>{ const m = /^DEV(\d+)$/.exec(r.codigo||''); if(m) maxN = Math.max(maxN, parseInt(m[1], 10)); });
+  }catch(e){ console.error('No se pudo consultar la secuencia de devoluciones', e); }
+  return 'DEV' + String(maxN+1).padStart(5, '0');
+}
+// Líneas (producto + lote) de un despacho; el lote ya viene definido por el despacho
+function selDevLineasDeDespacho(d){
+  const out = [];
+  (d.items||[]).forEach(it=>{
+    const lotes = (it.lotes && it.lotes.length) ? it.lotes : [{ lote:'', cantidad: it.cantidad }];
+    lotes.forEach(l=>{
+      const cant = Number(l.cantidad) || 0;
+      if(cant > 0) out.push({ item_codigo: it.item_codigo, item_nombre: it.item_nombre || it.item_codigo, medida: it.medida || '', lote: l.lote || 'N/A', despachada: cant, yaDevuelta: 0, devuelta: '' });
+    });
+  });
+  return out;
+}
+async function selDevYaDevuelto(despachoId, exceptoCodigo){
+  const mapa = {};
+  const { data } = await sb.from('sellado_devoluciones').select('codigo, items').eq('despacho_id', despachoId);
+  (data||[]).filter(r=>r.codigo !== exceptoCodigo).forEach(r=>(r.items||[]).forEach(it=>{
+    const k = selDevClave(it.item_codigo, it.lote); mapa[k] = (mapa[k]||0) + (Number(it.cantidad_devuelta)||0);
+  }));
+  return mapa;
+}
+async function selDevAbrir(id){
+  const dev = (SelDevState.rows||[]).find(r=>r.id===id); if(!dev) return;
+  // se vuelve a consultar Calidad para decidir con datos frescos si está bloqueada
+  const { data: cu } = await sb.from('cuarentena_lotes').select('id, origen_ref, estado').eq('origen_ref', dev.codigo);
+  SelDevState.cuar[dev.codigo] = cu || [];
+  selDevAbrirModal(selDevEstado(dev).bloqueada ? 'ver' : 'editar', dev);
+}
+async function selDevAbrirModal(modo, dev){
+  SelDevModal = { modo, dev: dev || null, despacho:null, lineas:[], despachos:null, q:'', guardando:false };
+  openModal(`<div class="mhead"><span class="sup">Sellado</span><h3 id="sdTitulo">${modo==='nuevo' ? 'Ingresar devolución' : escHtml(dev.codigo)}</h3></div><div id="selDevBody"></div>`);
+  if(modo === 'nuevo'){
+    selDevPintar();
+    const { data } = await sb.from('despacho_registros').select('id, numero_despacho, fecha, destino, cliente, factura, placa, items').order('fecha', { ascending:false }).order('numero_despacho', { ascending:false }).limit(400);
+    SelDevModal.despachos = data || [];
+    selDevPintarResultados();
+  } else {
+    // Devolución existente: se reconstruyen las líneas con lo despachado y lo ya devuelto en OTRAS devoluciones
+    const { data: d } = await sb.from('despacho_registros').select('id, numero_despacho, fecha, destino, cliente, factura, placa, items').eq('id', dev.despacho_id).maybeSingle();
+    const base = d ? selDevLineasDeDespacho(d) : (dev.items||[]).map(it=>({ item_codigo:it.item_codigo, item_nombre:it.item_nombre, medida:it.medida||'', lote:it.lote, despachada:Number(it.cantidad_despachada)||0, yaDevuelta:0, devuelta:'' }));
+    const otras = await selDevYaDevuelto(dev.despacho_id, dev.codigo);
+    base.forEach(l=>{
+      l.yaDevuelta = otras[selDevClave(l.item_codigo, l.lote)] || 0;
+      const mia = (dev.items||[]).find(it=>selDevClave(it.item_codigo, it.lote) === selDevClave(l.item_codigo, l.lote));
+      l.devuelta = mia ? mia.cantidad_devuelta : '';
+      l.antes = mia ? Number(mia.cantidad_devuelta)||0 : 0;
+    });
+    SelDevModal.despacho = { id: dev.despacho_id, numero_despacho: dev.numero_despacho, fecha: dev.fecha, destino: dev.destino, cliente: dev.cliente, factura: dev.factura, placa: dev.placa };
+    SelDevModal.lineas = modo === 'ver' ? base.filter(l=>Number(l.devuelta) > 0) : base;
+    selDevPintar();
+  }
+}
+function selDevBuscar(txt){ if(!SelDevModal) return; SelDevModal.q = txt; selDevPintarResultados(); }
+function selDevPintarResultados(){
+  const box = document.getElementById('sdResultados'); if(!box || !SelDevModal) return;
+  if(SelDevModal.despachos == null){ box.innerHTML = '<div class="sub">Cargando despachos…</div>'; return; }
+  const q = (SelDevModal.q||'').trim().toUpperCase();
+  let rows = SelDevModal.despachos;
+  if(q) rows = rows.filter(d=>
+    [d.factura, d.cliente, d.destino, d.placa, String(d.numero_despacho||'')].some(x=>String(x||'').toUpperCase().includes(q)) ||
+    (d.items||[]).some(it=>((it.item_codigo||'')+' '+(it.item_nombre||'')).toUpperCase().includes(q)));
+  rows = rows.slice(0, 30);
+  box.innerHTML = rows.length ? rows.map(d=>`
+    <div class="reg-row" style="cursor:pointer;display:block;" onclick="selDevElegirDespacho('${d.id}')">
+      <b>Despacho N° ${escHtml(String(d.numero_despacho||'—'))}</b> · ${selDevFecha(d.fecha)}
+      <div style="font-size:13px;">${escHtml(d.cliente||'—')} · Factura ${escHtml(d.factura||'—')}</div>
+      <div style="font-size:12px;color:var(--muted);">${escHtml(d.destino||'—')}</div>
+    </div>`).join('') : '<div class="empty-state">No se encontró ningún despacho.</div>';
+}
+async function selDevElegirDespacho(id){
+  const d = (SelDevModal.despachos||[]).find(x=>x.id===id); if(!d) return;
+  const lineas = selDevLineasDeDespacho(d);
+  if(!lineas.length){ toast('Ese despacho no tiene productos con cantidad'); return; }
+  const yaDev = await selDevYaDevuelto(d.id, null);
+  lineas.forEach(l=>{ l.yaDevuelta = yaDev[selDevClave(l.item_codigo, l.lote)] || 0; });
+  SelDevModal.despacho = { id:d.id, numero_despacho:d.numero_despacho, fecha:d.fecha, destino:d.destino, cliente:d.cliente, factura:d.factura, placa:d.placa };
+  SelDevModal.lineas = lineas;
+  selDevPintar();
+}
+function selDevPintar(){
+  const body = document.getElementById('selDevBody'); if(!body || !SelDevModal) return;
+  const M = SelDevModal;
+  if(!M.despacho){
+    body.innerHTML = `
+      <div class="field"><label>Buscar el despacho</label>
+        <input type="text" id="sdBuscar" placeholder="Factura, nombre, destino o cliente…" oninput="selDevBuscar(this.value)" value="${escHtml(M.q)}"></div>
+      <div id="sdResultados" style="max-height:48vh;overflow:auto;"></div>
+      <div class="modal-actions"><button class="btn ghost" onclick="closeModal()">Cancelar</button></div>`;
+    return;
+  }
+  const d = M.despacho, ro = M.modo === 'ver';
+  const dato = (t, v) => `<div class="field" style="margin-bottom:6px;"><label>${t}</label><input type="text" value="${escHtml(v||'')}" disabled></div>`;
+  body.innerHTML = `
+    ${ro ? `<div class="sub" style="margin-bottom:8px;">🔒 Bloqueada: mientras exista su registro en Calidad → Cuarentena no se puede editar. Se desbloquea si Calidad elimina ese registro.</div>` : ''}
+    ${dato('Destino', d.destino)}${dato('Cliente', d.cliente)}${dato('Factura', d.factura)}${dato('Placa del vehículo', d.placa)}
+    <div class="sub" style="margin:6px 0;"><b>Productos despachados</b> — escribe la cantidad devuelta; si lo dejas vacío, de ese producto no se devolvió nada.</div>
+    ${M.lineas.map((l,i)=>{
+      const max = Math.max(0, l.despachada - l.yaDevuelta);
+      return `<div style="border:1px solid var(--line);border-radius:8px;padding:8px;margin-bottom:6px;">
+        <div style="font-weight:700;font-size:13px;">${escHtml(l.item_codigo)} — ${escHtml(l.item_nombre)}</div>
+        <div style="font-size:12px;color:var(--muted);">Lote ${escHtml(l.lote)} · Despachado ${fmtNum(l.despachada)}${l.yaDevuelta ? ' · Ya devuelto antes ' + fmtNum(l.yaDevuelta) : ''} · Máx. ${fmtNum(max)}</div>
+        <div class="field" style="margin:6px 0 0;"><label>Cantidad devuelta</label>
+          <input type="text" inputmode="decimal" id="sdCant_${i}" placeholder="0" value="${l.devuelta!==''&&l.devuelta!=null ? fmtRaw(l.devuelta) : ''}" ${ro ? 'disabled' : ''}></div>
+      </div>`;
+    }).join('')}
+    <div class="modal-actions">
+      <button class="btn ghost" onclick="closeModal()">${ro ? 'Cerrar' : 'Cancelar'}</button>
+      ${ro ? '' : `<button class="btn primary" style="--accent:var(--paradas)" onclick="selDevGuardar()">Guardar</button>`}
+    </div>`;
+}
+async function selDevSaldoLote(codigo, lote){
+  const { data } = await sb.from('kardex_movimientos').select('entra, sale').eq('item_codigo', codigo).eq('lote', lote);
+  return (data||[]).reduce((s,m)=>s + (Number(m.entra)||0) - (Number(m.sale)||0), 0);
+}
+async function selDevGuardar(){
+  const M = SelDevModal; if(!M || !M.despacho || M.guardando) return;
+  const editando = M.modo === 'editar';
+  const lineas = M.lineas.map((l,i)=>({ ...l, nueva: selDevNum(document.getElementById('sdCant_'+i).value) }));
+  for(const l of lineas){
+    const txt = document.getElementById('sdCant_'+lineas.indexOf(l)).value.trim();
+    if(txt === '') { l.nueva = 0; continue; }
+    if(isNaN(l.nueva) || l.nueva < 0){ toast('Revisa la cantidad devuelta de ' + l.item_nombre); return; }
+    const max = Math.max(0, l.despachada - l.yaDevuelta);
+    if(l.nueva > max + 0.0001){ toast('La devolución de ' + l.item_nombre + ' (lote ' + l.lote + ') supera lo despachado: máximo ' + fmtNum(max)); return; }
+  }
+  const conCant = lineas.filter(l=>l.nueva > 0);
+  if(!conCant.length){ toast('Escribe la cantidad devuelta de al menos un producto'); return; }
+  M.guardando = true;
+  try{
+    // Al editar, no se puede quitar de golpe lo que ya se usó del lote
+    if(editando){
+      for(const l of lineas){
+        const antes = l.antes || 0;
+        if(l.nueva < antes){
+          const saldo = await selDevSaldoLote(l.item_codigo, l.lote);
+          if(saldo < (antes - l.nueva) - 0.0001){ toast('No se puede reducir ' + l.item_nombre + ' (lote ' + l.lote + '): ya se usó parte de esa cantidad (saldo del lote ' + fmtNum(saldo) + ')'); M.guardando = false; return; }
+        }
+      }
+    }
+    const itemsDev = conCant.map(l=>({ item_codigo:l.item_codigo, item_nombre:l.item_nombre, lote:l.lote, medida:l.medida, cantidad_despachada:l.despachada, cantidad_devuelta:l.nueva }));
+    const d = M.despacho, hoy = todayISO();
+    let codigo = editando ? M.dev.codigo : await selDevSiguienteCodigo();
+    const comprobante = selDevComprobante(codigo);
+    const filasKardex = c => itemsDev.map(it=>({ item_codigo:it.item_codigo, fecha:hoy, lote:it.lote, comprobante: selDevComprobante(c), entra:it.cantidad_devuelta, sale:0 }));
+    const filasCuar = c => itemsDev.map(it=>({ item_codigo:it.item_codigo, item_nombre:it.item_nombre, lote:it.lote, medida:it.medida, cantidad:it.cantidad_devuelta,
+      motivo:'Devolución ' + c + ' — ' + (d.cliente||'') + (d.factura ? ' · Factura ' + d.factura : ''), responsable:'SELLADO', estado:'en_cuarentena', origen_ref:c }));
+    let viejosKardex = [];
+    if(editando){
+      const { data: vk } = await sb.from('kardex_movimientos').select('*').eq('comprobante', comprobante);
+      viejosKardex = (vk||[]).map(({id, ...resto})=>resto);
+      const { error: eDel } = await sb.from('kardex_movimientos').delete().eq('comprobante', comprobante);
+      if(eDel){ toast('Error: ' + eDel.message); M.guardando = false; return; }
+      await sb.from('cuarentena_lotes').delete().eq('origen_ref', codigo);
+      const { error: eUp } = await sb.from('sellado_devoluciones').update({ items: itemsDev, updated_at: new Date().toISOString() }).eq('id', M.dev.id);
+      if(eUp){ if(viejosKardex.length) await sb.from('kardex_movimientos').insert(viejosKardex); toast('Error: ' + eUp.message); M.guardando = false; return; }
+    } else {
+      const fila = { codigo, fecha:hoy, despacho_id:d.id, numero_despacho:d.numero_despacho, destino:d.destino, cliente:d.cliente, factura:d.factura, placa:d.placa, items:itemsDev };
+      let { error } = await sb.from('sellado_devoluciones').insert(fila);
+      if(error && /duplicate|unique|23505/i.test((error.message||'') + (error.code||''))){ // otro usuario tomó ese código: se pide el siguiente
+        codigo = await selDevSiguienteCodigo(); fila.codigo = codigo; ({ error } = await sb.from('sellado_devoluciones').insert(fila));
+      }
+      if(error){ toast('Error: ' + error.message); M.guardando = false; return; }
+    }
+    const { error: eK } = await sb.from('kardex_movimientos').insert(filasKardex(codigo));
+    if(eK){
+      if(editando && viejosKardex.length) await sb.from('kardex_movimientos').insert(viejosKardex);
+      if(!editando) await sb.from('sellado_devoluciones').delete().eq('codigo', codigo);
+      toast('Error al registrar en el Kardex: ' + eK.message); M.guardando = false; return;
+    }
+    const { error: eC } = await sb.from('cuarentena_lotes').insert(filasCuar(codigo));
+    if(eC){
+      await sb.from('kardex_movimientos').delete().eq('comprobante', selDevComprobante(codigo));
+      if(editando && viejosKardex.length) await sb.from('kardex_movimientos').insert(viejosKardex);
+      if(!editando) await sb.from('sellado_devoluciones').delete().eq('codigo', codigo);
+      toast('Error al enviar a cuarentena: ' + eC.message); M.guardando = false; return;
+    }
+    await invLoadStock();
+    closeModal();
+    await selDevRefrescar();
+    toast((editando ? 'Devolución ' : 'Devolución ') + codigo + ' guardada — quedó en Calidad (cuarentena)');
+  } catch(e){
+    toast('Error: ' + (e.message || e));
+  } finally { if(SelDevModal) SelDevModal.guardando = false; }
+}
+
 async function renderSelladoAjusteTab(){
   const root = document.getElementById('selRoot');
   if(!root) return;
@@ -12133,7 +12479,7 @@ async function selPersistItems(tipo){
    ============================================================ */
 async function nextAjusteNumero(codigo){
   const { data } = await sb.from('kardex_movimientos').select('comprobante').eq('item_codigo', codigo).ilike('comprobante', 'Ajuste N°%');
-  return (data||[]).length + 1;
+  return (data||[]).filter(r=>!/^Ajuste N°\s*DEV/i.test(r.comprobante||'')).length + 1; // las devoluciones (DEVxxxxx) tienen su propia numeración
 }
 function selRenderReetrabajo(tipo, row){
   const wrap = document.getElementById('selBody');
@@ -13881,21 +14227,29 @@ async function bodRenderRecepcion(){
   bodRenderParametros();
 }
 function bodFileInputHtml(field){
-  const val = BodState.draft[field];
+  const val = BodState.draft[field] || BodState.draft[ARCHIVO_CAMPO_URL[field]];
   return `<div style="display:flex;gap:8px;align-items:center;">
     <input type="file" accept="image/*,application/pdf" onchange="bodFileSelected('${field}', this)">
     ${val ? '<span class="sub" style="color:var(--ok);">✓ Adjuntado</span>' : ''}
   </div>`;
 }
-function bodFileSelected(field, inputEl){
+async function bodFileSelected(field, inputEl){
   const file = inputEl.files && inputEl.files[0];
   if(!file) return;
-  if(file.size > 4*1024*1024){ toast('El archivo es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
+  if(file.type === 'application/pdf' && file.size > 4*1024*1024){ toast('El PDF es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
+  const campoUrl = ARCHIVO_CAMPO_URL[field];
+  toast('Subiendo archivo…');
+  const url = await archivoSubirAFacturas(file, 'bodega');
+  if(url && campoUrl){
+    BodState.draft[campoUrl] = url; BodState.draft[field] = null; // la tabla guarda solo el enlace
+    toast('Archivo adjuntado'); bodRenderRecepcion(); return;
+  }
+  // Storage no respondió: se guarda dentro de la tabla como antes
+  if(file.size > 4*1024*1024){ toast('No se pudo subir el archivo y es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
   const reader = new FileReader();
   reader.onload = () => {
-    BodState.draft[field] = reader.result;
-    toast('Archivo adjuntado');
-    bodRenderRecepcion();
+    BodState.draft[field] = reader.result; if(campoUrl) BodState.draft[campoUrl] = null;
+    toast('Archivo adjuntado (guardado en la tabla)'); bodRenderRecepcion();
   };
   reader.readAsDataURL(file);
 }
@@ -14275,6 +14629,71 @@ function bodRegFiltered(){
   if(BodRegState.tipo) rows = rows.filter(r=>(r.tipo_recepcion||'')===BodRegState.tipo);
   return rows;
 }
+/* ===== Mover a Storage los archivos antiguos que están guardados dentro de la tabla (herramienta de un solo uso) ===== */
+// Por cada archivo: se sube a Storage SIN recomprimirlo, se descarga y se compara byte a byte con el original (SHA-256);
+// solo si es idéntico se guarda el enlace y entonces se vacía el texto viejo de esa fila. Si algo falla, esa fila no se toca.
+const BOD_MIGRAR_CAMPOS = [['factura_archivo','factura_url'], ['guia_remision_archivo','guia_remision_url'], ['certificado_calidad_archivo','certificado_calidad_url']];
+async function bodContarArchivosAntiguos(){
+  const filas = {};
+  for(const [viejo] of BOD_MIGRAR_CAMPOS){
+    const { data, error } = await sb.from('bodega_registros').select('id').not(viejo, 'is', null);
+    if(error) return null;
+    (data||[]).forEach(r=>{ (filas[r.id] = filas[r.id] || []).push(viejo); });
+  }
+  return filas;
+}
+async function bodActualizarBannerMigracion(){
+  const el = document.getElementById('bodMigrarBanner'); if(!el) return;
+  if(!['BODEGA','PRODUCCION'].includes(currentArea)){ el.innerHTML = ''; return; }
+  const filas = await bodContarArchivosAntiguos();
+  const el2 = document.getElementById('bodMigrarBanner'); if(!el2) return;
+  const n = filas ? Object.values(filas).reduce((s,a)=>s+a.length, 0) : 0;
+  el2.innerHTML = n ? `<div class="card" style="--accent:#B45309;margin-bottom:8px;"><div style="display:flex;align-items:center;gap:10px;">
+    <div style="flex:1;"><b>${n} archivo(s) antiguo(s) dentro de la tabla</b><div class="sub">Facturas, guías o certificados guardados como texto. Moverlos a Storage libera espacio de la base.</div></div>
+    <button class="btn" onclick="bodMigrarArchivosAntiguos()">Mover a Storage</button></div></div>` : '';
+}
+async function bodSha256(buf){ const h = await crypto.subtle.digest('SHA-256', buf); return [...new Uint8Array(h)].map(b=>b.toString(16).padStart(2,'0')).join(''); }
+async function bodMigrarArchivosAntiguos(){
+  if(!await confirmar('Se moverán a Storage los archivos antiguos. Cada uno se verifica contra el original y solo entonces se vacía su texto en la tabla. ¿Continuar?')) return;
+  const filas = await bodContarArchivosAntiguos();
+  if(!filas || !Object.keys(filas).length){ toast('No hay archivos antiguos por mover'); bodActualizarBannerMigracion(); return; }
+  openModal(`<h3>Moviendo archivos a Storage…</h3><div class="msub">No cierres la app hasta que termine.</div><div id="bodMigLog" style="font-size:13px;max-height:50vh;overflow:auto;"></div>`);
+  const log = t => { const e = document.getElementById('bodMigLog'); if(e) e.insertAdjacentHTML('beforeend', '<div>'+t+'</div>'); };
+  const PERMITIDOS = { 'image/jpeg':'jpg', 'image/png':'png', 'image/webp':'webp', 'application/pdf':'pdf' };
+  let ok = 0, omitidos = 0;
+  for(const id of Object.keys(filas)){
+    for(const viejo of filas[id]){
+      const nuevo = BOD_MIGRAR_CAMPOS.find(x=>x[0]===viejo)[1];
+      const { data: row, error: eLeer } = await sb.from('bodega_registros').select('id, numero_compra, ' + viejo).eq('id', id).single();
+      const etiqueta = 'Recepción ' + ((row && row.numero_compra) || '') + ' · ' + viejo.replace('_archivo','').replace(/_/g,' ');
+      const dataUrl = row && row[viejo];
+      if(eLeer || !dataUrl || !String(dataUrl).startsWith('data:')){ omitidos++; log('⚠ ' + etiqueta + ': no se pudo leer'); continue; }
+      try{
+        const blob = await (await fetch(dataUrl)).blob();
+        const ext = PERMITIDOS[blob.type];
+        if(!ext){ omitidos++; log('⚠ ' + etiqueta + ': tipo de archivo no permitido (' + blob.type + ')'); continue; }
+        if(blob.size > 5*1024*1024){ omitidos++; log('⚠ ' + etiqueta + ': pesa más de 5 MB'); continue; }
+        const ruta = 'bodega/migrado_' + ((row.numero_compra) || id) + '_' + viejo.replace('_archivo','') + '_' + Date.now() + '.' + ext;
+        const sub = await sb.storage.from('facturas').upload(ruta, blob, { contentType: blob.type, upsert:false });
+        if(sub.error){ omitidos++; log('⚠ ' + etiqueta + ': no se pudo subir'); continue; }
+        const url = sb.storage.from('facturas').getPublicUrl(ruta).data.publicUrl;
+        // verificación: lo subido debe ser idéntico al original
+        const r = await fetch(url, { cache:'no-store' });
+        const copia = r.ok ? await r.arrayBuffer() : null;
+        const iguales = copia && copia.byteLength === blob.size && (await bodSha256(copia)) === (await bodSha256(await blob.arrayBuffer()));
+        if(!iguales){ sb.storage.from('facturas').remove([ruta]); omitidos++; log('⚠ ' + etiqueta + ': la copia no coincide con el original; no se tocó'); continue; }
+        const upd = {}; upd[nuevo] = url; upd[viejo] = null;
+        const { error: eAct } = await sb.from('bodega_registros').update(upd).eq('id', id);
+        if(eAct){ omitidos++; log('⚠ ' + etiqueta + ': no se pudo actualizar (la copia queda en Storage)'); continue; }
+        ok++; log('✓ ' + etiqueta + ' (' + Math.round(blob.size/1024) + ' KB)');
+      }catch(e){ omitidos++; log('⚠ ' + etiqueta + ': ' + escHtml(e.message || 'error')); }
+    }
+  }
+  log('<b>Listo: ' + ok + ' movido(s)' + (omitidos ? ', ' + omitidos + ' sin tocar' : '') + '.</b>');
+  toast(ok + ' archivo(s) movido(s) a Storage' + (omitidos ? ' · ' + omitidos + ' sin tocar' : ''));
+  bodActualizarBannerMigracion();
+  if(typeof bodRegReload === 'function') bodRegReload();
+}
 async function renderBodRegistrosTab(){
   const root = document.getElementById('bodRoot');
   if(!root) return;
@@ -14300,6 +14719,7 @@ async function renderBodRegistrosTab(){
     <div class="field-row" style="margin-bottom:6px;">
       <button class="btn" style="width:100%;" onclick="bodExportExcel()">⬇ Descargar Excel</button>
     </div>
+    <div id="bodMigrarBanner"></div>
     <div class="list-meta" id="brMeta">Cargando…</div>
     <div class="reg-list" id="brList"><div class="loading-state"><span class="spinner"></span>Cargando…</div></div>
   `;
@@ -14309,6 +14729,7 @@ async function renderBodRegistrosTab(){
   document.getElementById('brProveedor').addEventListener('change', e=>{ BodRegState.proveedor=e.target.value; bodRenderRegistrosList(); });
   document.getElementById('brTipo').addEventListener('change', e=>{ BodRegState.tipo=e.target.value; bodRenderRegistrosList(); });
   await bodRegReload();
+  bodActualizarBannerMigracion();
 }
 async function bodRegReload(){ await bodRegLoad(); bodRenderRegistrosList(); }
 function bodRenderRegistrosList(){
@@ -14436,15 +14857,15 @@ function bodImprimir(id){
 }
 function bodEvidenciasHtml(row){
   const evid = [
-    ['Factura', row.factura_archivo],
-    ['Guía de remisión', row.guia_remision_archivo],
-    ['Certificado de calidad', row.certificado_calidad_archivo]
+    ['Factura', row.factura_url || row.factura_archivo],
+    ['Guía de remisión', row.guia_remision_url || row.guia_remision_archivo],
+    ['Certificado de calidad', row.certificado_calidad_url || row.certificado_calidad_archivo]
   ].filter(([,src])=>!!src);
   if(!evid.length) return '';
   return evid.map(([label,src])=>`
     <div class="evid-page">
       <div class="evid-label">Evidencia — ${escHtml(label)}</div>
-      ${src.startsWith('data:application/pdf') ? `<embed src="${src}" type="application/pdf" class="evid-pdf">` : `<img src="${src}" class="evid-img">`}
+      ${archivoEsPdf(src) ? `<embed src="${src}" type="application/pdf" class="evid-pdf">` : `<img src="${src}" class="evid-img">`}
     </div>
   `).join('');
 }
@@ -14526,21 +14947,28 @@ function despNuevoDraft(numero){
   };
 }
 function despFileInputHtml(field){
-  const val = DespState.draft[field];
+  const val = DespState.draft[field] || DespState.draft[ARCHIVO_CAMPO_URL[field]];
   return `<div style="display:flex;gap:8px;align-items:center;">
     <input type="file" accept="image/*,application/pdf" onchange="despFileSelected('${field}', this)">
     ${val ? '<span class="sub" style="color:var(--ok);">✓ Adjuntado</span>' : ''}
   </div>`;
 }
-function despFileSelected(field, inputEl){
+async function despFileSelected(field, inputEl){
   const file = inputEl.files && inputEl.files[0];
   if(!file) return;
-  if(file.size > 4*1024*1024){ toast('El archivo es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
+  if(file.type === 'application/pdf' && file.size > 4*1024*1024){ toast('El PDF es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
+  const campoUrl = ARCHIVO_CAMPO_URL[field];
+  toast('Subiendo archivo…');
+  const url = await archivoSubirAFacturas(file, 'despacho');
+  if(url && campoUrl){
+    DespState.draft[campoUrl] = url; DespState.draft[field] = null; // la tabla guarda solo el enlace
+    toast('Archivo adjuntado'); despRenderLiberacion(); return;
+  }
+  if(file.size > 4*1024*1024){ toast('No se pudo subir el archivo y es muy pesado (máx. 4MB)'); inputEl.value=''; return; }
   const reader = new FileReader();
   reader.onload = () => {
-    DespState.draft[field] = reader.result;
-    toast('Archivo adjuntado');
-    despRenderLiberacion();
+    DespState.draft[field] = reader.result; if(campoUrl) DespState.draft[campoUrl] = null;
+    toast('Archivo adjuntado (guardado en la tabla)'); despRenderLiberacion();
   };
   reader.readAsDataURL(file);
 }
@@ -15138,11 +15566,12 @@ function despImprimir(id){
   win.document.close();
 }
 function despEvidenciasHtml(row){
-  if(!row.factura_archivo) return '';
+  const src = row.factura_url || row.factura_archivo;
+  if(!src) return '';
   return `
     <div class="evid-page">
       <div class="evid-label">Evidencia — Factura</div>
-      ${row.factura_archivo.startsWith('data:application/pdf') ? `<embed src="${row.factura_archivo}" type="application/pdf" class="evid-pdf">` : `<img src="${row.factura_archivo}" class="evid-img">`}
+      ${archivoEsPdf(src) ? `<embed src="${src}" type="application/pdf" class="evid-pdf">` : `<img src="${src}" class="evid-img">`}
     </div>
   `;
 }
